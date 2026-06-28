@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 LUCI_TITLE:=LuCI support for Sub-Store (Subscription Manager)
-LUCI_DEPENDS:=+node +uhttpd
+LUCI_DEPENDS:=+node
 LUCI_PKGARCH:=all
 
 PKG_NAME:=luci-app-substore
