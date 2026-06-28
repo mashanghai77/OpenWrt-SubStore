@@ -12,6 +12,19 @@ PKG_MAINTAINER:=mashanghai77
 
 include $(TOPDIR)/feeds/luci/luci.mk
 
+define Package/luci-app-substore/install
+	$(INSTALL_DIR) $(1)/etc/init.d
+	$(INSTALL_BIN) ./root/etc/init.d/substore $(1)/etc/init.d/substore
+	$(INSTALL_DIR) $(1)/etc/config
+	$(INSTALL_DATA) ./root/etc/config/substore $(1)/etc/config/substore
+	$(INSTALL_DIR) $(1)/usr/libexec/substore
+	$(INSTALL_BIN) ./root/usr/libexec/substore/postinstall.sh $(1)/usr/libexec/substore/postinstall.sh
+	$(INSTALL_DIR) $(1)/usr/share/luci/menu.d
+	$(INSTALL_DATA) ./root/usr/share/luci/menu.d/luci-app-substore.json $(1)/usr/share/luci/menu.d/luci-app-substore.json
+	$(INSTALL_DIR) $(1)/www/luci-static/resources/view/substore
+	$(INSTALL_DATA) ./root/www/luci-static/resources/view/substore/main.js $(1)/www/luci-static/resources/view/substore/main.js
+endef
+
 define Package/luci-app-substore/postinst
 #!/bin/sh
 [ -n "$${IPKG_INSTROOT}" ] && exit 0
