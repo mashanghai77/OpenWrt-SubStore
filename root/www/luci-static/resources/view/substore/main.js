@@ -12,6 +12,19 @@ var callServiceList = rpc.declare({
 	expect: { '': {} }
 });
 
+var callInitAction = rpc.declare({
+	object: 'rc',
+	method: 'init',
+	params: ['name', 'action']
+});
+
+var callRunCmd = rpc.declare({
+	object: 'file',
+	method: 'exec',
+	params: ['command', 'params'],
+	expect: { '': {} }
+});
+
 function getServiceStatus() {
 	return callServiceList('substore').then(function(res) {
 		try {
@@ -32,7 +45,6 @@ return view.extend({
 
 	render: function(data) {
 		var isRunning = data[1];
-
 		var m, s, o;
 
 		m = new form.Map('substore', _('Sub-Store'),
@@ -50,7 +62,6 @@ return view.extend({
 			return '<span style="color:%s;font-weight:bold;">● %s</span>'.format(color, text);
 		};
 
-		// 打开Web面板按钮
 		o = s.option(form.DummyValue, '_open', _('Web Panel'));
 		o.rawhtml = true;
 		o.cfgvalue = function(section_id) {
@@ -64,6 +75,24 @@ return view.extend({
 			return '<a href="%s" target="_blank" class="btn cbi-button cbi-button-action">%s ↗</a>'
 				.format(url, _('Open Sub-Store'));
 		};
+
+		o = s.option(form.DummyValue, '_actions', _('Actions'));
+		o.rawhtml = true;
+		o.cfgvalue = function() {
+			return '<button class="btn cbi-button cbi-button-apply" id="btn_restart">%s</button>'
+				.format(_('Restart'));
+		};
+		o.write = function() {};
+
+		o = s.option(form.DummyValue, '_update', _('Update'));
+		o.rawhtml = true;
+		o.cfgvalue = function() {
+			return '<button class="btn cbi-button cbi-button-action" id="btn_update_backend">%s</button> \
+				<button class="btn cbi-button cbi-button-action" id="btn_update_frontend">%s</button> \
+				<span id="update_status" style="margin-left:8px;font-size:13px;color:#666;"></span>'
+				.format(_('Update Backend'), _('Update Frontend'));
+		};
+		o.write = function() {};
 
 		// ── 基础设置 ────────────────────────────────────────────
 		s = m.section(form.NamedSection, 'config', 'substore', _('Basic Settings'));
@@ -84,11 +113,11 @@ return view.extend({
 		s = m.section(form.NamedSection, 'config', 'substore', _('Port & Network'));
 		s.anonymous = true;
 
-		o = s.option(form.Value, 'frontend_port', _('Frontend Port'));
+		o = s.option(form.Value, 'frontend_port', _('Service Port'), _('Port for both frontend and backend'));
 		o.default = '3001';
 		o.datatype = 'port';
 
-		o = s.option(form.Value, 'frontend_host', _('Frontend Listen Address'));
+		o = s.option(form.Value, 'frontend_host', _('Listen Address'));
 		o.default = '0.0.0.0';
 		o.placeholder = '0.0.0.0';
 
@@ -96,24 +125,8 @@ return view.extend({
 		o.default = '/sub-store-api';
 		o.placeholder = '/sub-store-api';
 
-		o = s.option(form.Flag, 'backend_merge', _('Merge Frontend & Backend'),
-			_('Serve both frontend and backend on the same port (frontend port)'));
-		o.default = '1';
-		o.rmempty = false;
-
-		o = s.option(form.Value, 'backend_api_port', _('Backend API Port'),
-			_('Only used when merge is disabled'));
-		o.default = '3000';
-		o.datatype = 'port';
-		o.depends('backend_merge', '0');
-
-		o = s.option(form.Value, 'backend_api_host', _('Backend API Listen Address'),
-			_('Should never be exposed publicly. Only used when merge is disabled'));
-		o.default = '127.0.0.1';
-		o.depends('backend_merge', '0');
-
 		o = s.option(form.Value, 'http_meta_port', _('HTTP-META Port'),
-			_('Port for HTTP-META (built-in proxy test engine). Avoid conflict with other services'));
+			_('Port for HTTP-META engine. Avoid conflict with other services'));
 		o.default = '9876';
 		o.datatype = 'port';
 
@@ -122,7 +135,7 @@ return view.extend({
 		s.anonymous = true;
 
 		o = s.option(form.Value, 'backend_sync_cron', _('Subscription Sync Cron'),
-			_('Cron expression to push subscriptions to Gist. e.g. 55 23 * * * (daily at 23:55)'));
+			_('Cron expression to push subscriptions to Gist. e.g. 55 23 * * *'));
 		o.placeholder = '55 23 * * *';
 
 		o = s.option(form.Value, 'backend_upload_cron', _('Backup Upload Cron'),
@@ -197,21 +210,80 @@ return view.extend({
 		o = s.option(form.Value, 'mmdb_cron', _('MMDB Update Cron'));
 		o.placeholder = '0 4 * * 1';
 
-		return m.render();
+		return m.render().then(function(node) {
+
+			// 重启按钮
+			var btnRestart = node.querySelector('#btn_restart');
+			if (btnRestart) {
+				btnRestart.addEventListener('click', function() {
+					btnRestart.disabled = true;
+					btnRestart.textContent = _('Restarting...');
+					callInitAction('substore', 'restart').then(function() {
+						ui.addNotification(null, E('p', _('Sub-Store restarted.')), 'info');
+					}).catch(function() {
+						ui.addNotification(null, E('p', _('Restart failed.')), 'danger');
+					}).finally(function() {
+						btnRestart.disabled = false;
+						btnRestart.textContent = _('Restart');
+					});
+				});
+			}
+
+			// 更新后端按钮
+			var btnUpdateBackend = node.querySelector('#btn_update_backend');
+			var updateStatus = node.querySelector('#update_status');
+			if (btnUpdateBackend) {
+				btnUpdateBackend.addEventListener('click', function() {
+					btnUpdateBackend.disabled = true;
+					updateStatus.textContent = _('Downloading backend...');
+					callRunCmd('wget', ['-q', '-O', '/usr/libexec/substore/sub-store.bundle.js',
+						'https://github.com/sub-store-org/Sub-Store/releases/latest/download/sub-store.bundle.js'
+					]).then(function() {
+						updateStatus.textContent = _('Restarting...');
+						return callInitAction('substore', 'restart');
+					}).then(function() {
+						updateStatus.style.color = '#2ecc71';
+						updateStatus.textContent = _('Backend updated and restarted.');
+					}).catch(function() {
+						updateStatus.style.color = '#e74c3c';
+						updateStatus.textContent = _('Backend update failed.');
+					}).finally(function() {
+						btnUpdateBackend.disabled = false;
+					});
+				});
+			}
+
+			// 更新前端按钮
+			var btnUpdateFrontend = node.querySelector('#btn_update_frontend');
+			if (btnUpdateFrontend) {
+				btnUpdateFrontend.addEventListener('click', function() {
+					btnUpdateFrontend.disabled = true;
+					updateStatus.textContent = _('Downloading frontend...');
+					callRunCmd('wget', ['-q', '-O', '/tmp/dist.zip',
+						'https://github.com/sub-store-org/Sub-Store-Front-End/releases/latest/download/dist.zip'
+					]).then(function() {
+						updateStatus.textContent = _('Extracting...');
+						return callRunCmd('sh', ['-c', 'rm -rf /www/sub-store/dist && unzip -q /tmp/dist.zip -d /www/sub-store && rm -f /tmp/dist.zip']);
+					}).then(function() {
+						updateStatus.style.color = '#2ecc71';
+						updateStatus.textContent = _('Frontend updated successfully.');
+					}).catch(function() {
+						updateStatus.style.color = '#e74c3c';
+						updateStatus.textContent = _('Frontend update failed.');
+					}).finally(function() {
+						btnUpdateFrontend.disabled = false;
+					});
+				});
+			}
+
+			return node;
+		});
 	},
 
 	handleSaveApply: function(ev) {
-		return this.handleSave(ev).then(function() {
-			return rpc.call('rc', 'init', {
-				name: 'substore',
-				action: 'restart'
-			}).catch(function() {
-				return L.resolveDefault(
-					L.Request.get('/cgi-bin/luci/admin/system/startup').then(function() {
-						return Promise.resolve();
-					})
-				);
-			});
+		return this.super('handleSaveApply', [ev]).then(function() {
+			var btn = document.querySelector('#btn_restart');
+			if (btn) btn.click();
 		});
 	}
 });
