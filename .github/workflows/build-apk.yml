@@ -52,8 +52,8 @@ jobs:
           VERSION=$(echo "$VERSION" | sed 's/\.0$//')
           RELEASE=$(grep "^PKG_RELEASE:=" openwrt-sdk/package/luci-app-substore/Makefile | cut -d= -f2)
 
-          echo "APP_VERSION=${VERSION}" >> $GITHUB_ENV
-          echo "APP_RELEASE=${RELEASE}" >> $GITHUB_ENV
+          echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "APP_RELEASE=$RELEASE" >> "$GITHUB_ENV"
 
       - name: Build
         run: |
@@ -64,10 +64,17 @@ jobs:
       - name: Collect APK
         run: |
           mkdir -p output
-          find openwrt-sdk/bin -name "luci-app-substore*.apk" | while read file; do
-            cp "$file" "output/luci-app-substore-${APP_VERSION}.${APP_RELEASE}.apk"
-          done
-          ls -lh output/
+
+          APK=$(find openwrt-sdk/bin -type f -name "luci-app-substore*.apk" | head -n 1)
+
+          if [ -z "$APK" ]; then
+            echo "No APK found!"
+            exit 1
+          fi
+
+          cp "$APK" "output/luci-app-substore-${APP_VERSION}.${APP_RELEASE}.apk"
+
+          ls -lh output
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -76,10 +83,11 @@ jobs:
           path: output/*.apk
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ env.APP_VERSION }}.${{ env.APP_RELEASE }}-apk
           name: luci-app-substore ${{ env.APP_VERSION }}.${{ env.APP_RELEASE }} (apk)
           files: output/*.apk
+          overwrite_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
