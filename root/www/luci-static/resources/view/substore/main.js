@@ -125,7 +125,7 @@ return view.extend({
 		o = s.option(form.Value, 'backend_custom_name', _('实例名称'), _('显示在前端界面上的后端名称'));
 		o.default = 'OpenWrt';
 
-		o = s.option(form.Value, 'frontend_backend_path', _('后端路径前缀'), _('作为 API 路径使用，避免使用特殊符号，开头的 / 已固定，无需输入'));
+		o = s.option(form.Value, 'frontend_backend_path', _('后端路径前缀'), _('作为 API 路径使用，避免使用特殊符号'));
 		o.default = '/sub-store-api';
 		o.placeholder = 'sub-store-api';
 
