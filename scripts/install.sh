@@ -16,7 +16,7 @@ if [ -x /usr/bin/apk ]; then
 
     echo "添加软件源..."
     mkdir -p /etc/apk/repositories.d
-    echo "$REPO_URL/openwrt-25.12/aarch64_cortex-a53" > /etc/apk/repositories.d/substore.list
+    echo "$REPO_URL/openwrt-25.12/all" > /etc/apk/repositories.d/substore.list
 
     echo "更新索引..."
     apk update
@@ -34,7 +34,7 @@ elif [ -x /bin/opkg ]; then
 
     echo "添加软件源..."
     if ! grep -q "substore" /etc/opkg/customfeeds.conf 2>/dev/null; then
-        echo "src/gz substore $REPO_URL/openwrt-23.05/x86_64" >> /etc/opkg/customfeeds.conf
+        echo "src/gz substore $REPO_URL/openwrt-23.05/all" >> /etc/opkg/customfeeds.conf
     fi
 
     echo "更新索引..."
