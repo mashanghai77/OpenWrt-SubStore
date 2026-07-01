@@ -109,7 +109,7 @@ jobs:
           cp keys/ipk-sign.pub site/substore-ipk.pub
           cp scripts/install.sh site/install.sh
 
-      - name: Generate index.html (Nikki-style directory tree)
+      - name: Generate index.html (directory tree)
         run: |
           python3 << 'EOF'
           import os
