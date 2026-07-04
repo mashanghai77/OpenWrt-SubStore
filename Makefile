@@ -1,71 +1,73 @@
 include $(TOPDIR)/rules.mk
 
-PKG_NAME:=miaomiaowu
+LUCI_TITLE:=LuCI support for Sub-Store (Subscription Manager)
+LUCI_DEPENDS:=+node +unzip +wget-ssl
+LUCI_PKGARCH:=all
 
-# 版本号不再手写死值，而是编译时直接从你自己发布的 Packages 索引里
-# 动态取最新版本，跟上游走到哪个版本，这里就自动是哪个版本，
-# 不用每次上游更新了还要手动回来改这个文件。
-PKG_VERSION:=$(strip $(shell wget -qO- "https://miaomiaowu-openwrt.445568.xyz/openwrt-ipk/$(ARCH_PACKAGES)/Packages" 2>/dev/null | \
-	awk '/^Package: miaomiaowu$$/{f=1;next} f&&/^Version:/{print $$2;exit} /^$$/{f=0}'))
-ifeq ($(PKG_VERSION),)
-  # 取不到就先给个假值，让编译在这一步就明确报错，而不是继续往下走
-  # 产生一堆下载 404 之类的诡异连锁错误
-  PKG_VERSION:=0.0.0-VERSION-FETCH-FAILED
-endif
+PKG_NAME:=luci-app-substore
+PKG_VERSION:=2.9
 PKG_RELEASE:=1
+PKG_LICENSE:=GPL-3.0
+PKG_MAINTAINER:=xiaohai77
 
-# 上一版这里错把 $(PKGARCH) 当成 opkg 架构字符串用了，这个变量在这个
-# 阶段其实是空的。真正能在 Makefile 顶部就拿到 "aarch64_cortex-a53"
-# 这种 opkg 架构名的变量是 ARCH_PACKAGES。
-PKG_SOURCE_URL:=https://miaomiaowu-openwrt.445568.xyz/openwrt-ipk/$(ARCH_PACKAGES)
-PKG_SOURCE:=$(PKG_NAME)_$(PKG_VERSION)_$(ARCH_PACKAGES).ipk
-PKG_SOURCE_PROTO:=default
-PKG_HASH:=skip
+# Sub-Store 官方后端/前端最新 release 地址。之前这两个文件是靠 GitHub Actions
+# 在编译前手动 wget 下载塞进 root/ 目录，git 仓库里其实从没提交过。
+# 别人直接拿这个仓库当 feed 编译时 root/ 下没有这两个东西，会直接报错。
+# 现在改成编译时自己下载，不再依赖外部 CI 提前把文件塞进 root/。
+SUBSTORE_BACKEND_URL:=https://github.com/sub-store-org/Sub-Store/releases/latest/download/sub-store.bundle.js
+SUBSTORE_FRONTEND_URL:=https://github.com/sub-store-org/Sub-Store-Front-End/releases/latest/download/dist.zip
 
-PKG_MAINTAINER:=第十六夜月
-PKG_LICENSE:=MIT
-
-include $(INCLUDE_DIR)/package.mk
-
-define Package/miaomiaowu
-  SECTION:=net
-  CATEGORY:=Network
-  TITLE:=Clash 配置订阅管理工具 (妙妙屋后端)
-  DEPENDS:=+libc
-endef
-
-define Package/miaomiaowu/description
-  miaomiaowu 后端服务，配合 luci-app-miaomiaowu 使用
-endef
+include $(TOPDIR)/feeds/luci/luci.mk
 
 define Build/Prepare
 	mkdir -p $(PKG_BUILD_DIR)
-ifeq ($(PKG_VERSION),0.0.0-VERSION-FETCH-FAILED)
-	@echo "错误: 没能从 https://miaomiaowu-openwrt.445568.xyz/openwrt-ipk/$(ARCH_PACKAGES)/Packages 取到版本号" >&2
-	@echo "      请检查该 URL 是否能访问，以及 Packages 里是不是真有 miaomiaowu 这个条目" >&2
-	@exit 1
-endif
-	@if ! gzip -t "$(DL_DIR)/$(PKG_SOURCE)" 2>/dev/null; then \
-		echo "错误: $(DL_DIR)/$(PKG_SOURCE) 不是合法的 ipk(不是 gzip 格式)" >&2; \
-		echo "      前 200 字节内容如下，很可能下载到的是 404 页面:" >&2; \
-		head -c 200 "$(DL_DIR)/$(PKG_SOURCE)" >&2; echo >&2; \
-		exit 1; \
-	fi
-	tar -xzf $(DL_DIR)/$(PKG_SOURCE) -O ./data.tar.gz | tar -xzC $(PKG_BUILD_DIR)
+	echo "下载 Sub-Store 后端 bundle..."
+	wget -q -O $(PKG_BUILD_DIR)/sub-store.bundle.js "$(SUBSTORE_BACKEND_URL)"
+	[ -s $(PKG_BUILD_DIR)/sub-store.bundle.js ] || { echo "错误: 后端下载失败或为空" >&2; exit 1; }
+
+	echo "下载 Sub-Store 前端 dist..."
+	wget -q -O $(PKG_BUILD_DIR)/dist.zip "$(SUBSTORE_FRONTEND_URL)"
+	[ -s $(PKG_BUILD_DIR)/dist.zip ] || { echo "错误: 前端下载失败或为空" >&2; exit 1; }
+	# dist.zip 内部自带一层 dist/ 目录(dist/index.html ...)，
+	# 解压目标要写 PKG_BUILD_DIR 本身，不能再套一层 PKG_BUILD_DIR/dist，
+	# 否则会变成 PKG_BUILD_DIR/dist/dist/index.html，装上后网页打不开
+	rm -rf $(PKG_BUILD_DIR)/dist
+	unzip -q -o $(PKG_BUILD_DIR)/dist.zip -d $(PKG_BUILD_DIR)
+	[ -f $(PKG_BUILD_DIR)/dist/index.html ] || { echo "错误: 解压后没找到 dist/index.html，前端包结构可能变了" >&2; exit 1; }
 endef
 
 define Build/Compile
 endef
 
-define Package/miaomiaowu/install
-	$(INSTALL_DIR) $(1)/usr/bin
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/usr/bin/mmw $(1)/usr/bin/mmw
-
+define Package/luci-app-substore/install
 	$(INSTALL_DIR) $(1)/etc/init.d
-	$(INSTALL_BIN) ./files/miaomiaowu.init $(1)/etc/init.d/miaomiaowu
-
+	$(INSTALL_BIN) ./root/etc/init.d/substore $(1)/etc/init.d/substore
 	$(INSTALL_DIR) $(1)/etc/config
-	$(INSTALL_CONF) ./files/miaomiaowu.config $(1)/etc/config/miaomiaowu
+	$(INSTALL_DATA) ./root/etc/config/substore $(1)/etc/config/substore
+	$(INSTALL_DIR) $(1)/usr/libexec/substore
+	$(INSTALL_BIN) ./root/usr/libexec/substore/postinstall.sh $(1)/usr/libexec/substore/postinstall.sh
+	$(INSTALL_BIN) ./root/usr/libexec/substore/update-backend.sh $(1)/usr/libexec/substore/update-backend.sh
+	$(INSTALL_BIN) ./root/usr/libexec/substore/update-frontend.sh $(1)/usr/libexec/substore/update-frontend.sh
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/sub-store.bundle.js $(1)/usr/libexec/substore/sub-store.bundle.js
+	$(INSTALL_DIR) $(1)/usr/share/luci/menu.d
+	$(INSTALL_DATA) ./root/usr/share/luci/menu.d/luci-app-substore.json $(1)/usr/share/luci/menu.d/luci-app-substore.json
+	$(INSTALL_DIR) $(1)/usr/share/rpcd/acl.d
+	$(INSTALL_DATA) ./root/usr/share/rpcd/acl.d/luci-app-substore.json $(1)/usr/share/rpcd/acl.d/luci-app-substore.json
+	$(INSTALL_DIR) $(1)/www/luci-static/resources/view/substore
+	$(INSTALL_DATA) ./root/www/luci-static/resources/view/substore/main.js $(1)/www/luci-static/resources/view/substore/main.js
+	$(INSTALL_DATA) ./root/www/luci-static/resources/view/substore/advanced.js $(1)/www/luci-static/resources/view/substore/advanced.js
+	$(INSTALL_DATA) ./root/www/luci-static/resources/view/substore/network.js $(1)/www/luci-static/resources/view/substore/network.js
+	$(INSTALL_DATA) ./root/www/luci-static/resources/view/substore/recovery.js $(1)/www/luci-static/resources/view/substore/recovery.js
+	$(INSTALL_DATA) ./root/www/luci-static/resources/view/substore/cron.js $(1)/www/luci-static/resources/view/substore/cron.js
+	$(INSTALL_DIR) $(1)/www/sub-store
+	$(CP) $(PKG_BUILD_DIR)/dist $(1)/www/sub-store/
 endef
 
-$(eval $(call BuildPackage,miaomiaowu))
+define Package/luci-app-substore/postinst
+#!/bin/sh
+[ -n "$${IPKG_INSTROOT}" ] && exit 0
+/usr/libexec/substore/postinstall.sh
+exit 0
+endef
+
+$(eval $(call BuildPackage,luci-app-substore))
