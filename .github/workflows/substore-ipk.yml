@@ -49,7 +49,12 @@ jobs:
         run: |
           cd openwrt-sdk
           make defconfig
-          make package/luci-app-substore/compile V=s 2>&1 | tail -50
+          if ! make package/luci-app-substore/compile V=s > build.log 2>&1; then
+            echo "=== 编译失败，日志最后 150 行 ==="
+            tail -150 build.log
+            exit 1
+          fi
+          tail -50 build.log
 
       - name: Collect IPK
         run: |
