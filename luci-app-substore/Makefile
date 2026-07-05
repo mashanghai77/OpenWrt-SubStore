@@ -20,10 +20,44 @@ PKG_MAINTAINER:=xiaohai77
 # 这一版改成直接放进 Package/install 里——这一步是确定会执行的
 # （旧版本 Makefile 靠的也是这个阶段），下载完直接装到 $(1) 里，
 # 不再依赖 PKG_BUILD_DIR / Build/Prepare。
+#
+# 2026-07 修复：之前这里直连 GitHub Releases 下载 bundle.js / dist.zip，
+# 没有超时设置。GitHub Actions 的 CI runner 在国外机房访问 GitHub 很快，
+# 从没暴露过问题；但本地/自建环境网络到 GitHub 不稳时，wget 会卡住不动、
+# 不报错也不退出，导致整个固件编译卡死几个小时（表现为编译日志停在某个
+# 毫不相关的包上，因为那只是并行编译里刚好同时跑完的其他任务）。
+# 现在改成优先走自己的 Cloudflare 镜像（跟 ipk/apk 签名索引同一套基建），
+# 镜像失败再退回 GitHub 直连兜底，并且两边都加了超时/重试，超时就直接
+# 报错退出，不会再无限期卡死。
+SUBSTORE_MIRROR_BACKEND_URL:=https://substore-openwrt.445568.xyz/assets/sub-store.bundle.js
+SUBSTORE_MIRROR_FRONTEND_URL:=https://substore-openwrt.445568.xyz/assets/dist.zip
 SUBSTORE_BACKEND_URL:=https://github.com/sub-store-org/Sub-Store/releases/latest/download/sub-store.bundle.js
 SUBSTORE_FRONTEND_URL:=https://github.com/sub-store-org/Sub-Store-Front-End/releases/latest/download/dist.zip
 
+# 连接超时15秒、总重试2次、重试间隔3秒——卡住15秒就判定失败，绝不无限等待。
+WGET_OPTS:=--timeout=15 --tries=2 --waitretry=3
+
 include $(TOPDIR)/feeds/luci/luci.mk
+
+# $(1) = 目标文件路径, $(2) = 镜像URL, $(3) = 兜底URL, $(4) = 描述文字
+define DownloadWithFallback
+	echo "下载 $(4)（优先走自己的镜像）..."; \
+	if wget $(WGET_OPTS) -q -O "$(1)" "$(2)" && [ -s "$(1)" ]; then \
+		echo "$(4) 镜像下载成功"; \
+	else \
+		echo "镜像下载失败或为空，改用官方源重试: $(3)" >&2; \
+		if ! wget $(WGET_OPTS) -q -O "$(1)" "$(3)"; then \
+			echo "错误: $(4) 下载失败（镜像和官方源都不通）: $(3)" >&2; \
+			rm -f "$(1)"; \
+			exit 1; \
+		fi; \
+	fi; \
+	if [ ! -s "$(1)" ]; then \
+		echo "错误: $(4) 下载结果为空" >&2; \
+		rm -f "$(1)"; \
+		exit 1; \
+	fi
+endef
 
 define Package/luci-app-substore/install
 	$(INSTALL_DIR) $(1)/etc/init.d
@@ -35,12 +69,7 @@ define Package/luci-app-substore/install
 	$(INSTALL_BIN) ./root/usr/libexec/substore/update-backend.sh $(1)/usr/libexec/substore/update-backend.sh
 	$(INSTALL_BIN) ./root/usr/libexec/substore/update-frontend.sh $(1)/usr/libexec/substore/update-frontend.sh
 
-	echo "下载 Sub-Store 后端 bundle..."
-	wget -q -O $(1)/usr/libexec/substore/sub-store.bundle.js "$(SUBSTORE_BACKEND_URL)"
-	if [ ! -s $(1)/usr/libexec/substore/sub-store.bundle.js ]; then \
-		echo "错误: 后端下载失败或为空: $(SUBSTORE_BACKEND_URL)" >&2; \
-		exit 1; \
-	fi
+	$(call DownloadWithFallback,$(1)/usr/libexec/substore/sub-store.bundle.js,$(SUBSTORE_MIRROR_BACKEND_URL),$(SUBSTORE_BACKEND_URL),Sub-Store 后端 bundle)
 
 	$(INSTALL_DIR) $(1)/usr/share/luci/menu.d
 	$(INSTALL_DATA) ./root/usr/share/luci/menu.d/luci-app-substore.json $(1)/usr/share/luci/menu.d/luci-app-substore.json
@@ -54,13 +83,7 @@ define Package/luci-app-substore/install
 	$(INSTALL_DATA) ./root/www/luci-static/resources/view/substore/cron.js $(1)/www/luci-static/resources/view/substore/cron.js
 
 	$(INSTALL_DIR) $(1)/www/sub-store
-	echo "下载 Sub-Store 前端 dist..."
-	wget -q -O /tmp/substore-dist-luci-app-substore.zip "$(SUBSTORE_FRONTEND_URL)"
-	if [ ! -s /tmp/substore-dist-luci-app-substore.zip ]; then \
-		echo "错误: 前端下载失败或为空: $(SUBSTORE_FRONTEND_URL)" >&2; \
-		rm -f /tmp/substore-dist-luci-app-substore.zip; \
-		exit 1; \
-	fi
+	$(call DownloadWithFallback,/tmp/substore-dist-luci-app-substore.zip,$(SUBSTORE_MIRROR_FRONTEND_URL),$(SUBSTORE_FRONTEND_URL),Sub-Store 前端 dist)
 	unzip -q -o /tmp/substore-dist-luci-app-substore.zip -d $(1)/www/sub-store
 	rm -f /tmp/substore-dist-luci-app-substore.zip
 	if [ ! -f $(1)/www/sub-store/dist/index.html ]; then \
