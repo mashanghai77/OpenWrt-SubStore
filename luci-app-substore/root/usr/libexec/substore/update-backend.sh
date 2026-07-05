@@ -20,6 +20,11 @@ fi
 #
 # 2026-07 修复：加上 AbortSignal.timeout，避免网络卡住时 fetch 一直挂着
 # 不返回；同时优先走自己的 Cloudflare 镜像，镜像不通再退回官方 GitHub。
+#
+# 2026-07 二次修复：Cloudflare Pages 对不存在的路径会返回一个 HTML 错误
+# 页而不是网络错误，之前只判断了"下载没有报错"，会把这个 HTML 页面当成
+# 合法 bundle.js 存下来。现在下载后检查内容开头不是 HTML 标签，不对就
+# 当失败处理，触发退回官方源。
 "$NODE" -e "
 const fs = require('fs');
 const { pipeline } = require('stream/promises');
@@ -29,6 +34,10 @@ async function download(url) {
   const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
   if (!res.ok) throw new Error('HTTP ' + res.status);
   await pipeline(Readable.fromWeb(res.body), fs.createWriteStream('$TMP'));
+  const head = fs.readFileSync('$TMP', { encoding: 'utf8', flag: 'r' }).slice(0, 200);
+  if (/<html|<!DOCTYPE/i.test(head)) {
+    throw new Error('返回内容像是 HTML 错误页，不是 js bundle');
+  }
 }
 
 (async () => {

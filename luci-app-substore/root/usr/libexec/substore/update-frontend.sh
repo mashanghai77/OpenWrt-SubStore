@@ -25,6 +25,11 @@ fi
 #
 # 2026-07 修复：加上 AbortSignal.timeout 防止网络卡住时无限挂起；
 # 优先走自己的 Cloudflare 镜像，镜像不通再退回官方 GitHub。
+#
+# 2026-07 二次修复：Cloudflare Pages 对不存在的路径会返回一个 HTML 错误
+# 页而不是网络错误，之前只判断了"下载没有报错"，会把这个 HTML 页面当成
+# 合法 zip 存下来，直到后面 unzip 才发现不对。现在下载后额外检查文件
+# 开头的 zip 魔数（PK），不对就当失败处理，触发退回官方源。
 "$NODE" -e "
 const fs = require('fs');
 const { pipeline } = require('stream/promises');
@@ -34,6 +39,12 @@ async function download(url) {
   const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
   if (!res.ok) throw new Error('HTTP ' + res.status);
   await pipeline(Readable.fromWeb(res.body), fs.createWriteStream('$ZIP_PATH'));
+  const head = Buffer.alloc(4);
+  const fd = fs.openSync('$ZIP_PATH', 'r');
+  fs.readSync(fd, head, 0, 4, 0);
+  fs.closeSync(fd);
+  const isZip = head[0] === 0x50 && head[1] === 0x4b; // 'P' 'K'
+  if (!isZip) throw new Error('返回内容不是有效的 zip 文件（可能是 404 错误页）');
 }
 
 (async () => {
