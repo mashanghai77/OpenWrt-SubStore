@@ -6,7 +6,8 @@ MV=$(command -v mv)
 RM=$(command -v rm)
 BUNDLE=/usr/libexec/substore/sub-store.bundle.js
 TMP="$BUNDLE.tmp"
-URL="https://github.com/sub-store-org/Sub-Store/releases/latest/download/sub-store.bundle.js"
+MIRROR_URL="https://substore-openwrt.445568.xyz/assets/sub-store.bundle.js"
+FALLBACK_URL="https://github.com/sub-store-org/Sub-Store/releases/latest/download/sub-store.bundle.js"
 
 if [ -z "$NODE" ]; then
 	echo "FAIL: node 命令未找到" >&2
@@ -16,14 +17,27 @@ fi
 # 不再依赖 wget/uclient-fetch 等外部下载工具，node 自带的 fetch 本身
 # 就有完整的 HTTPS 实现（跟妙妙屋的 Go 二进制自带网络栈是同一个思路），
 # 反正 node 本身就是跑后端必须要装的东西，不算多引入依赖。
+#
+# 2026-07 修复：加上 AbortSignal.timeout，避免网络卡住时 fetch 一直挂着
+# 不返回；同时优先走自己的 Cloudflare 镜像，镜像不通再退回官方 GitHub。
 "$NODE" -e "
 const fs = require('fs');
 const { pipeline } = require('stream/promises');
 const { Readable } = require('stream');
-(async () => {
-  const res = await fetch('$URL');
-  if (!res.ok) { console.error('HTTP ' + res.status); process.exit(1); }
+
+async function download(url) {
+  const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
   await pipeline(Readable.fromWeb(res.body), fs.createWriteStream('$TMP'));
+}
+
+(async () => {
+  try {
+    await download('$MIRROR_URL');
+  } catch (e) {
+    console.error('镜像下载失败(' + (e && e.message || e) + ')，改用官方源重试...');
+    await download('$FALLBACK_URL');
+  }
 })().catch(e => { console.error(e && e.message || e); process.exit(1); });
 "
 

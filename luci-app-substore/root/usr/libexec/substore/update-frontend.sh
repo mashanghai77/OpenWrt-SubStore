@@ -11,7 +11,8 @@ ZIP_PATH=/tmp/dist.zip
 DIST_PATH=/www/sub-store/dist
 DIST_BAK_PATH=/www/sub-store/dist.bak
 DIST_NEW_PATH=/www/sub-store/dist.new
-URL="https://github.com/sub-store-org/Sub-Store-Front-End/releases/latest/download/dist.zip"
+MIRROR_URL="https://substore-openwrt.445568.xyz/assets/dist.zip"
+FALLBACK_URL="https://github.com/sub-store-org/Sub-Store-Front-End/releases/latest/download/dist.zip"
 
 if [ -z "$NODE" ] || [ -z "$UNZIP" ]; then
 	echo "FAIL: node 或 unzip 命令未找到" >&2
@@ -21,14 +22,27 @@ fi
 # 下载改用 node 内置 fetch，不再需要 wget/uclient-fetch。
 # unzip 保留：node 标准库没有内置解压功能，这个依赖去不掉，
 # 但 unzip 本身很小、不涉及额外的 SSL 库，跟 wget-ssl 那种重量级依赖不是一个量级。
+#
+# 2026-07 修复：加上 AbortSignal.timeout 防止网络卡住时无限挂起；
+# 优先走自己的 Cloudflare 镜像，镜像不通再退回官方 GitHub。
 "$NODE" -e "
 const fs = require('fs');
 const { pipeline } = require('stream/promises');
 const { Readable } = require('stream');
-(async () => {
-  const res = await fetch('$URL');
-  if (!res.ok) { console.error('HTTP ' + res.status); process.exit(1); }
+
+async function download(url) {
+  const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
   await pipeline(Readable.fromWeb(res.body), fs.createWriteStream('$ZIP_PATH'));
+}
+
+(async () => {
+  try {
+    await download('$MIRROR_URL');
+  } catch (e) {
+    console.error('镜像下载失败(' + (e && e.message || e) + ')，改用官方源重试...');
+    await download('$FALLBACK_URL');
+  }
 })().catch(e => { console.error(e && e.message || e); process.exit(1); });
 "
 
