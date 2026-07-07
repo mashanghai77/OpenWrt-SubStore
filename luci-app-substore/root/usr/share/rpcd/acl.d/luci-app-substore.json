@@ -5,6 +5,10 @@
 			"uci": ["substore"],
 			"ubus": {
 				"service": ["list"]
+			},
+			"file": {
+				"/usr/libexec/substore/backend.version": ["read"],
+				"/usr/libexec/substore/frontend.version": ["read"]
 			}
 		},
 		"write": {
