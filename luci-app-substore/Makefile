@@ -39,10 +39,18 @@ PKG_MAINTAINER:=xiaohai77
 # 这种残缺文件名，导致下载根本没写到预期路径、后续判断全部失真。
 # 现在干脆去掉这些临时 shell 变量，改成直接重复写死路径 + 用 elif 链
 # 代替状态标志位，彻底避开这个双重展开的坑。
-SUBSTORE_MIRROR_BACKEND_URL:=https://substore-openwrt.445568.xyz/assets/sub-store.bundle.js
-SUBSTORE_MIRROR_FRONTEND_URL:=https://substore-openwrt.445568.xyz/assets/dist.zip
+#
+# 2026-07 修复 (第四版)：之前是镜像优先、官方源兜底。但镜像内容依赖
+# release-pipeline.yml 在触发编译前先把 /assets/ 刷新到 Cloudflare，
+# 一旦这一步没跑或者没跑完，编译期拿到的就是镜像上的旧版本，等于要靠
+# CI 编排顺序来保证内容新鲜，多绕了一层还容易踩坑。现在 WGET_OPTS 已经
+# 有超时/重试兜底，直连 GitHub 官方源不会再无限期卡死，于是改回官方源
+# 优先、镜像仅作为官方源不通时的兜底——内容新鲜度直接由上游保证，不用
+# 再依赖 CI 编排顺序，release-pipeline.yml 里预热镜像的那一步也就不需要了。
 SUBSTORE_BACKEND_URL:=https://github.com/sub-store-org/Sub-Store/releases/latest/download/sub-store.bundle.js
 SUBSTORE_FRONTEND_URL:=https://github.com/sub-store-org/Sub-Store-Front-End/releases/latest/download/dist.zip
+SUBSTORE_MIRROR_BACKEND_URL:=https://substore-openwrt.445568.xyz/assets/sub-store.bundle.js
+SUBSTORE_MIRROR_FRONTEND_URL:=https://substore-openwrt.445568.xyz/assets/dist.zip
 
 # 连接超时15秒、总重试2次、重试间隔3秒——卡住15秒就判定失败，绝不无限等待。
 WGET_OPTS:=--timeout=15 --tries=2 --waitretry=3
@@ -59,15 +67,15 @@ define Package/luci-app-substore/install
 	$(INSTALL_BIN) ./root/usr/libexec/substore/update-backend.sh $(1)/usr/libexec/substore/update-backend.sh
 	$(INSTALL_BIN) ./root/usr/libexec/substore/update-frontend.sh $(1)/usr/libexec/substore/update-frontend.sh
 
-	echo "下载 Sub-Store 后端 bundle（优先走自己的镜像）..."
-	if wget $(WGET_OPTS) -q -O $(1)/usr/libexec/substore/sub-store.bundle.js "$(SUBSTORE_MIRROR_BACKEND_URL)" \
+	echo "下载 Sub-Store 后端 bundle（优先走官方源）..."
+	if wget $(WGET_OPTS) -q -O $(1)/usr/libexec/substore/sub-store.bundle.js "$(SUBSTORE_BACKEND_URL)" \
 	   && [ -s $(1)/usr/libexec/substore/sub-store.bundle.js ] \
 	   && ! head -c 200 $(1)/usr/libexec/substore/sub-store.bundle.js | grep -qi '<html\|<!DOCTYPE'; then \
-		echo "后端 bundle 镜像下载成功"; \
-	elif wget $(WGET_OPTS) -q -O $(1)/usr/libexec/substore/sub-store.bundle.js "$(SUBSTORE_BACKEND_URL)" \
+		echo "官方源下载后端 bundle 成功"; \
+	elif wget $(WGET_OPTS) -q -O $(1)/usr/libexec/substore/sub-store.bundle.js "$(SUBSTORE_MIRROR_BACKEND_URL)" \
 	   && [ -s $(1)/usr/libexec/substore/sub-store.bundle.js ] \
 	   && ! head -c 200 $(1)/usr/libexec/substore/sub-store.bundle.js | grep -qi '<html\|<!DOCTYPE'; then \
-		echo "镜像不通，已改用官方源下载后端 bundle 成功"; \
+		echo "官方源不通，已改用自己的镜像下载后端 bundle 成功"; \
 	else \
 		echo "错误: 后端 bundle 下载失败（镜像和官方源都拿不到有效文件）" >&2; \
 		rm -f $(1)/usr/libexec/substore/sub-store.bundle.js; \
@@ -86,15 +94,15 @@ define Package/luci-app-substore/install
 	$(INSTALL_DATA) ./root/www/luci-static/resources/view/substore/cron.js $(1)/www/luci-static/resources/view/substore/cron.js
 
 	$(INSTALL_DIR) $(1)/www/sub-store
-	echo "下载 Sub-Store 前端 dist（优先走自己的镜像）..."
-	if wget $(WGET_OPTS) -q -O /tmp/substore-dist-luci-app-substore.zip "$(SUBSTORE_MIRROR_FRONTEND_URL)" \
+	echo "下载 Sub-Store 前端 dist（优先走官方源）..."
+	if wget $(WGET_OPTS) -q -O /tmp/substore-dist-luci-app-substore.zip "$(SUBSTORE_FRONTEND_URL)" \
 	   && [ -s /tmp/substore-dist-luci-app-substore.zip ] \
 	   && unzip -tq /tmp/substore-dist-luci-app-substore.zip >/dev/null 2>&1; then \
-		echo "前端 dist 镜像下载成功"; \
-	elif wget $(WGET_OPTS) -q -O /tmp/substore-dist-luci-app-substore.zip "$(SUBSTORE_FRONTEND_URL)" \
+		echo "官方源下载前端 dist 成功"; \
+	elif wget $(WGET_OPTS) -q -O /tmp/substore-dist-luci-app-substore.zip "$(SUBSTORE_MIRROR_FRONTEND_URL)" \
 	   && [ -s /tmp/substore-dist-luci-app-substore.zip ] \
 	   && unzip -tq /tmp/substore-dist-luci-app-substore.zip >/dev/null 2>&1; then \
-		echo "镜像不通，已改用官方源下载前端 dist 成功"; \
+		echo "官方源不通，已改用自己的镜像下载前端 dist 成功"; \
 	else \
 		echo "错误: 前端 dist 下载失败（镜像和官方源都拿不到有效 zip）" >&2; \
 		rm -f /tmp/substore-dist-luci-app-substore.zip; \
