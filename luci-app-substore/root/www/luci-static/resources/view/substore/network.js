@@ -3,30 +3,16 @@
 'require form';
 'require uci';
 
-// 校验监听地址：:: 、0.0.0.0、合法IPv4、合法IPv6
+// 校验监听地址：只允许 ::（IPv6 全部地址）、0.0.0.0（IPv4 全部地址）、
+// 127.0.0.1（仅本机回环）这三个精确值，其余一律视为非法——不再放行
+// 任意合法 IPv4/IPv6，避免监听到不该监听的地址上。
 function validateHost(value) {
 	if (!value || value.trim() === '') return true;
 	var v = value.trim();
 
-	// :: 和 0.0.0.0 是最常用的两个，直接放行
 	if (v === '::' || v === '0.0.0.0' || v === '127.0.0.1') return true;
 
-	// 校验IPv4：四段数字，每段0-255
-	var ipv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
-	var m4 = v.match(ipv4);
-	if (m4) {
-		for (var i = 1; i <= 4; i++) {
-			if (parseInt(m4[i], 10) > 255) {
-				return _('IPv4 地址每段范围为 0-255，请检查输入');
-			}
-		}
-		return true;
-	}
-
-	// 校验IPv6：包含冒号的地址（简单判断，不穷举所有格式）
-	if (v.indexOf(':') !== -1 && /^[0-9a-fA-F:]+$/.test(v)) return true;
-
-	return _('请输入有效的监听地址，例如 ::、0.0.0.0 或具体 IP 地址');
+	return _('监听地址只能是 ::（IPv4+IPv6 全部地址）、0.0.0.0（仅 IPv4 全部地址）或 127.0.0.1（仅本机），不支持自定义 IP');
 }
 
 // 校验代理地址：必须以支持的协议开头，且后面有实际内容
@@ -54,7 +40,7 @@ return view.extend({
 		o.default = '3001';
 		o.datatype = 'port';
 
-		o = s.option(form.Value, 'frontend_host', _('监听地址'), _(':: 表示同时监听 IPv4 和 IPv6，0.0.0.0 仅监听 IPv4'));
+		o = s.option(form.Value, 'frontend_host', _('监听地址'), _('只能填 ::（同时监听 IPv4/IPv6 全部地址）、0.0.0.0（仅 IPv4 全部地址）或 127.0.0.1（仅本机）'));
 		o.default = '::';
 		o.placeholder = '::';
 		o.validate = function(section_id, value) {
