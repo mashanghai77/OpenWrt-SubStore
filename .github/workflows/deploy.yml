@@ -117,6 +117,15 @@ jobs:
         # Makefile 里还有退回 GitHub 直连的兜底逻辑。
         # 这一步挂在 deploy.yml 里，因此每次 release-pipeline 检测到
         # 上游 backend/frontend 版本变化触发 deploy 时，镜像也会跟着刷新。
+        #
+        # 2026-07 三次新增：同时把这次镜像对应的上游 tag_name 写成两个固定
+        # 路径的小文本文件（backend-version.txt / frontend-version.txt）。
+        # 这不是给面板显示版本号的唯一来源——面板点"更新"按钮走的是
+        # update-backend.sh/update-frontend.sh 自己的逻辑，官方源可达时会
+        # 直接现查 API，不依赖这里。这两个文件只在"面板走镜像下载成功、
+        # 但镜像地址本身不带版本号"这一种情况下才会被用到，作为镜像内容
+        # 的版本说明，地址固定不随版本号变化，跟 bundle.js/dist.zip 本身
+        # 保持同一套"固定路径、覆盖内容"的逻辑。
         run: |
           set -e
           mkdir -p site/assets
@@ -129,6 +138,14 @@ jobs:
           [ -s site/assets/sub-store.bundle.js ] || { echo "backend 镜像下载失败"; exit 1; }
           [ -s site/assets/dist.zip ] || { echo "frontend 镜像下载失败"; exit 1; }
           unzip -tq site/assets/dist.zip >/dev/null || { echo "dist.zip 不是有效的 zip 文件"; exit 1; }
+
+          { wget -qO- --timeout=15 --tries=2 "https://api.github.com/repos/sub-store-org/Sub-Store/releases/latest" 2>/dev/null \
+              | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n1; \
+            echo unknown; } | head -n1 > site/assets/backend-version.txt
+          { wget -qO- --timeout=15 --tries=2 "https://api.github.com/repos/sub-store-org/Sub-Store-Front-End/releases/latest" 2>/dev/null \
+              | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n1; \
+            echo unknown; } | head -n1 > site/assets/frontend-version.txt
+
           ls -lh site/assets/
 
       - name: Generate index.html (directory tree)
