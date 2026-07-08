@@ -36,10 +36,10 @@ function getServiceStatus() {
 	});
 }
 
-// 版本文件由 Makefile 安装阶段 / update-backend.sh / update-frontend.sh
-// 在"实际下载发生的那一刻"写入，不是另开一条独立的记录渠道，所以点了
-// 更新按钮之后这里显示的内容一定跟到底装的是哪个版本对得上。
-// 文件不存在（比如老版本装的包还没有这两个文件）时按"未知"处理，不报错。
+function isServiceEnabled() {
+	return uci.get('substore', 'config', 'enabled') === '1';
+}
+
 function readVersionFile(path) {
 	return fs.read(path).then(function(v) {
 		return (v || '').trim();
@@ -66,13 +66,6 @@ function escapeHtml(s) {
 	});
 }
 
-// 2026-07 四次修复：这里是最后一道保险。前面 update-backend.sh /
-// update-frontend.sh 已经加了内容校验，正常情况下 version 文件里只会
-// 是一个干净的 tag_name。但万一以后镜像那边（Cloudflare）出了什么没
-// 预料到的岔子、又绕过了前面的校验，这里强制转义可以保证：不管文件里
-// 存的是什么，最多显示成一堆看着奇怪的文字，绝不会被当成 HTML 解析
-// 执行、把整个页面布局搞炸。同时限制显示长度，避免万一是一大段内容
-// 把这一行撑得很长。
 function formatVersionLine(label, version) {
 	var v = (version && version !== 'unknown') ? version : '未知';
 	if (v.length > 60) {
@@ -86,11 +79,6 @@ function renderVersionInfo(info) {
 		formatVersionLine('前端', info.frontendVersion);
 }
 
-// 调用脚本时指定来源（'proxy' / 'mirror' / 'official'），脚本只会打
-// 一次这个来源的下载，不会自己在内部悄悄切换来源。返回三种结果：
-//   ok: true                        —— 这次调用成功
-//   ok: false, retry: true          —— 这个来源下载失败，可以换另一个来源再试
-//   ok: false, retry: false         —— 真正的脚本异常（比如重启失败），不该再重试
 function runSourceScript(scriptPath, source) {
 	return callRunCmd(scriptPath, [source]).then(function(res) {
 		var stdout = (res && res.stdout) ? res.stdout.trim() : '';
@@ -107,16 +95,6 @@ function runSourceScript(scriptPath, source) {
 	});
 }
 
-// 2026-07 五次修复：这里是真正让页面能实时显示进度的地方——按顺序试
-// 每一个来源，调用之间更新一次页面文字，某个来源下载失败（且明确是
-// "可以换源重试"的失败）才去试下一个，不是下载问题导致的失败（比如
-// 重启没成功）直接报错，不会盲目重试。用户任何时候都能从页面文字上
-// 看出现在走的是哪个来源，不用等到最后弹出一条看不明白的拼接错误。
-//
-// 2026-07 六次修复：加了第三个来源 proxy（自建的 GitHub 加速代理），
-// 优先级：proxy（加速代理拉官方最新）> mirror（自己的静态镜像）>
-// official（官方原始直连，最后兜底）。这里用一个顺序数组描述整条链，
-// 以后再加/减来源只用改这个数组，不用动下面的调用逻辑。
 var SOURCE_CHAIN = [
 	{ source: 'proxy', name: '加速代理' },
 	{ source: 'mirror', name: '静态镜像' },
@@ -146,19 +124,12 @@ function updateWithFallback(scriptPath, label, statusEl) {
 	return tryStep(0);
 }
 
-// 启动/停止/重启之后，用真实查询到的运行状态刷新页面上的状态指示灯
-// 和启动/停止按钮的文字——不用整页重新加载，也不会出现"按钮文字和
-// 实际状态对不上"的情况。
 function refreshRunningState(node) {
 	return getServiceStatus().then(function(running) {
 		var indicator = node.querySelector('#substore_status_indicator');
 		if (indicator) {
 			indicator.style.color = running ? '#2ecc71' : '#e74c3c';
 			indicator.textContent = '● ' + (running ? '运行中' : '已停止');
-		}
-		var toggle = node.querySelector('#btn_toggle');
-		if (toggle) {
-			toggle.textContent = running ? '停止服务' : '启动服务';
 		}
 		var panel = node.querySelector('#substore_open_panel');
 		if (panel) {
@@ -176,6 +147,39 @@ function refreshRunningState(node) {
 	});
 }
 
+function runInitActionAndReload(action) {
+	return callInitAction('substore', action).then(function() {
+		window.location.reload();
+	});
+}
+
+function toggleServiceAndReload(action) {
+	var newEnabled = (action === 'start') ? '1' : '0';
+	uci.set('substore', 'config', 'enabled', newEnabled);
+
+	return uci.save().then(function() {
+		return uci.apply();
+	}).then(function() {
+		return callInitAction('substore', action);
+	}).then(function() {
+		window.location.reload();
+	});
+}
+
+var ENABLE_HINT_TEXT = '服务当前未启用：点击"启动服务"可重新启用并启动；重启、更新按钮需要先启用服务才可用';
+
+function guardedClick(btn, action) {
+	if (!btn) return;
+	btn.addEventListener('click', function() {
+		if (!isServiceEnabled()) return;
+		action();
+	});
+}
+
+function actionButtonStyle(enabled) {
+	return enabled ? '' : 'opacity:0.45;filter:grayscale(70%);cursor:not-allowed;';
+}
+
 return view.extend({
 	load: function() {
 		return Promise.all([
@@ -188,12 +192,12 @@ return view.extend({
 	render: function(data) {
 		var isRunning = data[1];
 		var versionInfo = data[2];
+		var isEnabled = isServiceEnabled();
 		var m, s, o;
 
 		m = new form.Map('substore', _('Sub-Store'),
 			_('高级订阅管理器'));
 
-		// ── 状态栏 ──────────────────────────────────────────────
 		s = m.section(form.NamedSection, 'config', 'substore', _('服务状态'));
 		s.anonymous = true;
 
@@ -228,9 +232,11 @@ return view.extend({
 		o.rawhtml = true;
 		o.cfgvalue = function() {
 			var toggleLabel = isRunning ? '停止服务' : '启动服务';
-			return '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
-				'<button class="btn cbi-button cbi-button-action" id="btn_toggle">' + toggleLabel + '</button>' +
-				'<button class="btn cbi-button cbi-button-apply" id="btn_restart">重启服务</button>' +
+			var toggleClass = isRunning ? 'cbi-button-remove' : 'cbi-button-action';
+			var restartStyle = actionButtonStyle(isEnabled);
+			return '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">' +
+				'<button class="btn cbi-button ' + toggleClass + '" id="btn_toggle">' + toggleLabel + '</button>' +
+				'<button class="btn cbi-button cbi-button-apply" id="btn_restart" style="' + restartStyle + '">重启服务</button>' +
 				'</div>';
 		};
 		o.write = function() {};
@@ -238,22 +244,25 @@ return view.extend({
 		o = s.option(form.DummyValue, '_update', _('更新'));
 		o.rawhtml = true;
 		o.cfgvalue = function() {
-			return '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">\
-				<button class="btn cbi-button cbi-button-action" id="btn_update_backend">更新后端</button>\
-				<button class="btn cbi-button cbi-button-action" id="btn_update_frontend">更新前端</button>\
-				<span id="update_status" style="font-size:13px;color:#666;"></span>\
-			</div>';
+			var style = actionButtonStyle(isEnabled);
+			return '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">' +
+				'<button class="btn cbi-button cbi-button-action" id="btn_update_backend" style="' + style + '">更新后端</button>' +
+				'<button class="btn cbi-button cbi-button-action" id="btn_update_frontend" style="' + style + '">更新前端</button>' +
+				'<span id="update_status" style="font-size:13px;color:#666;"></span>' +
+				'</div>';
 		};
 		o.write = function() {};
 
-		// ── 基础设置 ────────────────────────────────────────────
+		o = s.option(form.DummyValue, '_enable_hint', '');
+		o.rawhtml = true;
+		o.cfgvalue = function() {
+			if (isEnabled) return '';
+			return '<div id="substore_enable_hint" style="color:#e74c3c;font-size:13px;">⚠ ' + escapeHtml(ENABLE_HINT_TEXT) + '</div>';
+		};
+
 		s = m.section(form.NamedSection, 'config', 'substore', _('基础设置'));
 		s.anonymous = true;
 		s.addremove = false;
-
-		o = s.option(form.Flag, 'enabled', _('启用'), _('开机自动启动，保存并应用后立即生效'));
-		o.rmempty = false;
-		o.default = '1';
 
 		o = s.option(form.Value, 'data_dir', _('数据目录'), _('Sub-Store 数据文件存放路径'));
 		o.default = '/etc/sub-store';
@@ -266,13 +275,11 @@ return view.extend({
 		o.default = '/sub-store-api';
 		o.placeholder = 'sub-store-api';
 
-		// 读取时去掉开头的 /，只在输入框里显示路径内容本身
 		o.cfgvalue = function(section_id) {
 			var v = uci.get('substore', section_id, 'frontend_backend_path') || this.default;
 			return v.replace(/^\/+/, '');
 		};
 
-		// 保存时去除多余的 /，再统一拼上开头的 /；清空则回退默认值
 		o.write = function(section_id, value) {
 			value = (value || '').replace(/^\/+/, '');
 			if (value === '') {
@@ -284,94 +291,72 @@ return view.extend({
 
 		return m.render().then(function(node) {
 
-			// 重启按钮
 			var btnRestart = node.querySelector('#btn_restart');
-			if (btnRestart) {
-				btnRestart.addEventListener('click', function() {
-					btnRestart.disabled = true;
-					btnRestart.textContent = '重启中...';
-					callInitAction('substore', 'restart').then(function() {
-						ui.addNotification(null, E('p', 'Sub-Store 已重启。'), 'info');
-						return refreshRunningState(node);
-					}).catch(function() {
-						ui.addNotification(null, E('p', '重启失败。'), 'danger');
-					}).finally(function() {
-						btnRestart.disabled = false;
-						btnRestart.textContent = '重启服务';
-					});
+			guardedClick(btnRestart, function() {
+				btnRestart.disabled = true;
+				btnRestart.textContent = '重启中...';
+				runInitActionAndReload('restart').catch(function() {
+					ui.addNotification(null, E('p', '重启失败。'), 'danger');
+					btnRestart.disabled = false;
+					btnRestart.textContent = '重启服务';
 				});
-			}
+			});
 
-			// 启动/停止切换按钮：按钮当前文字决定这次点击是要启动还是停止，
-			// 动作结束后用真实状态刷新按钮文字和状态指示灯，不是简单假设
-			// "点了启动就一定在运行"——比如 enabled 被取消勾选保存过，
-			// init.d 里 start_service 会直接返回，实际不会真的跑起来，
-			// 这里刷新后会如实显示"已停止"，不会跟按钮文字对不上。
 			var btnToggle = node.querySelector('#btn_toggle');
 			if (btnToggle) {
 				btnToggle.addEventListener('click', function() {
 					var action = btnToggle.textContent.indexOf('停止') !== -1 ? 'stop' : 'start';
 					btnToggle.disabled = true;
 					btnToggle.textContent = (action === 'stop') ? '停止中...' : '启动中...';
-
-					callInitAction('substore', action).then(function() {
-						ui.addNotification(null, E('p', action === 'stop' ? 'Sub-Store 已停止。' : 'Sub-Store 已启动。'), 'info');
-						return refreshRunningState(node);
-					}).catch(function() {
+					toggleServiceAndReload(action).catch(function() {
 						ui.addNotification(null, E('p', (action === 'stop' ? '停止' : '启动') + '失败。'), 'danger');
-						return refreshRunningState(node);
-					}).finally(function() {
 						btnToggle.disabled = false;
+						btnToggle.textContent = (action === 'stop') ? '停止服务' : '启动服务';
 					});
 				});
 			}
 
-			// 更新后端按钮
 			var btnUpdateBackend = node.querySelector('#btn_update_backend');
 			var updateStatus = node.querySelector('#update_status');
-			if (btnUpdateBackend) {
-				btnUpdateBackend.addEventListener('click', function() {
-					btnUpdateBackend.disabled = true;
+			guardedClick(btnUpdateBackend, function() {
+				btnUpdateBackend.disabled = true;
 
-					updateWithFallback('/usr/libexec/substore/update-backend.sh', '后端', updateStatus).then(function() {
-						updateStatus.style.color = '#2ecc71';
-						updateStatus.textContent = '后端已更新并重启成功。';
-						return loadVersionInfo();
-					}).then(function(info) {
-						if (!info) return;
-						var el = node.querySelector('#substore_version_info');
-						if (el) el.innerHTML = renderVersionInfo(info);
-					}).catch(function(err) {
-						updateStatus.style.color = '#e74c3c';
-						updateStatus.textContent = '后端更新失败：' + (err && err.message ? err.message : '未知错误');
-					}).finally(function() {
-						btnUpdateBackend.disabled = false;
-					});
+				updateWithFallback('/usr/libexec/substore/update-backend.sh', '后端', updateStatus).then(function() {
+					updateStatus.style.color = '#2ecc71';
+					updateStatus.textContent = '后端已更新并重启成功。';
+					return Promise.all([loadVersionInfo(), refreshRunningState(node)]);
+				}).then(function(res) {
+					var info = res[0];
+					if (!info) return;
+					var el = node.querySelector('#substore_version_info');
+					if (el) el.innerHTML = renderVersionInfo(info);
+				}).catch(function(err) {
+					updateStatus.style.color = '#e74c3c';
+					updateStatus.textContent = '后端更新失败：' + (err && err.message ? err.message : '未知错误');
+				}).finally(function() {
+					btnUpdateBackend.disabled = false;
 				});
-			}
+			});
 
-			// 更新前端按钮
 			var btnUpdateFrontend = node.querySelector('#btn_update_frontend');
-			if (btnUpdateFrontend) {
-				btnUpdateFrontend.addEventListener('click', function() {
-					btnUpdateFrontend.disabled = true;
+			guardedClick(btnUpdateFrontend, function() {
+				btnUpdateFrontend.disabled = true;
 
-					updateWithFallback('/usr/libexec/substore/update-frontend.sh', '前端', updateStatus).then(function() {
-						updateStatus.style.color = '#2ecc71';
-						updateStatus.textContent = '前端已更新。';
-						return loadVersionInfo();
-					}).then(function(info) {
-						if (!info) return;
-						var el = node.querySelector('#substore_version_info');
-						if (el) el.innerHTML = renderVersionInfo(info);
-					}).catch(function(err) {
-						updateStatus.style.color = '#e74c3c';
-						updateStatus.textContent = '前端更新失败：' + (err && err.message ? err.message : '未知错误');
-					}).finally(function() {
-						btnUpdateFrontend.disabled = false;
-					});
+				updateWithFallback('/usr/libexec/substore/update-frontend.sh', '前端', updateStatus).then(function() {
+					updateStatus.style.color = '#2ecc71';
+					updateStatus.textContent = '前端已更新。';
+					return loadVersionInfo();
+				}).then(function(info) {
+					if (!info) return;
+					var el = node.querySelector('#substore_version_info');
+					if (el) el.innerHTML = renderVersionInfo(info);
+				}).catch(function(err) {
+					updateStatus.style.color = '#e74c3c';
+					updateStatus.textContent = '前端更新失败：' + (err && err.message ? err.message : '未知错误');
+				}).finally(function() {
+					btnUpdateFrontend.disabled = false;
 				});
-			}
+			});
 
 			return node;
 		});
@@ -379,8 +364,11 @@ return view.extend({
 
 	handleSaveApply: function(ev) {
 		return this.super('handleSaveApply', [ev]).then(function() {
-			var btn = document.querySelector('#btn_restart');
-			if (btn) btn.click();
+			var action = isServiceEnabled() ? 'restart' : 'stop';
+			return callInitAction('substore', action).catch(function() {
+			}).then(function() {
+				window.location.reload();
+			});
 		});
 	}
 });
