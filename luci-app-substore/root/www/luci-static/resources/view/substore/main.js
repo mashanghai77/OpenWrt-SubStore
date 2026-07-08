@@ -166,7 +166,7 @@ function toggleServiceAndReload(action) {
 	});
 }
 
-var ENABLE_HINT_TEXT = '服务当前未启用：点击"启动服务"可重新启用并启动；重启、更新按钮需要先启用服务才可用';
+var ENABLE_HINT_TEXT = '服务当前未启用：请先点击"启动服务" ';
 
 function guardedClick(btn, action) {
 	if (!btn) return;
