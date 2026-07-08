@@ -1,13 +1,6 @@
 #!/bin/sh
 set -e
 
-# 2026-07 五次修复：脚本只负责"打一次某个来源的下载"，通过第一个参数
-# 指定来源，重试逻辑挪到 main.js 里，方便页面实时显示"现在在试哪个源"。
-#
-# 2026-07 六次修复：加了第三个来源 proxy——自建的 GitHub 加速代理
-# （gh.445568.xyz），用法是在原始 GitHub 地址前面拼上代理域名。优先级
-# 是 proxy（走加速代理拉官方最新）> mirror（自己的静态资源镜像）>
-# official（官方原始直连，最后兜底）。
 SOURCE="$1"
 if [ "$SOURCE" != "proxy" ] && [ "$SOURCE" != "mirror" ] && [ "$SOURCE" != "official" ]; then
 	echo "FAIL: 参数必须是 proxy、mirror 或 official（实际收到: $SOURCE）" >&2
@@ -44,13 +37,6 @@ case "$SOURCE" in
 	official) URL="$OFFICIAL_URL" ;;
 esac
 
-# 下载改用 node 内置 fetch。unzip 保留：node 标准库没有内置解压功能，
-# 这个依赖去不掉，但 unzip 本身很小、不涉及额外的 SSL 库。
-#
-# 下载失败（网络问题、超时、zip 魔数校验没过）算"可恢复"的失败：打印
-# DOWNLOAD_FAILED: 原因 到 stdout、正常退出，main.js 看到这个前缀就
-# 知道可以换个来源再试一次。这是普通 shell 脚本，用 $(...) 捕获 node
-# 输出没问题，不受 Makefile Package/install 那种双重展开的坑影响。
 DL_OUTPUT=$("$NODE" -e "
 const fs = require('fs');
 const { pipeline } = require('stream/promises');
@@ -64,7 +50,7 @@ async function download(url) {
   const fd = fs.openSync('$ZIP_PATH', 'r');
   fs.readSync(fd, head, 0, 4, 0);
   fs.closeSync(fd);
-  const isZip = head[0] === 0x50 && head[1] === 0x4b; // 'P' 'K'
+  const isZip = head[0] === 0x50 && head[1] === 0x4b;
   if (!isZip) throw new Error('返回内容不是有效的 zip 文件（可能是 404 错误页）');
 }
 
@@ -109,9 +95,6 @@ if [ ! -f "$DIST_PATH/index.html" ]; then
 	exit 1
 fi
 
-# 版本号记录放在 dist 目录原子切换成功之后，理由跟 update-backend.sh
-# 一样。三个来源各自有一套查询优先顺序，尽量优先用跟下载同一条路径去
-# 查版本号，查不到再依次退化到另外两种方法，全部失败才保留旧值。
 "$NODE" -e "
 const fs = require('fs');
 
