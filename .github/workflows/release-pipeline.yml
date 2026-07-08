@@ -2,11 +2,11 @@ name: release-pipeline
 
 on:
   schedule:
-    - cron: '0 */6 * * *'   
+    - cron: '0 */6 * * *'
   workflow_dispatch:
     inputs:
       force:
-        description: "强制执行（勾选后跳过版本比对，即使上游没更新也会走完整流程，调试用）"
+        description: "强制执行（勾选后跳过版本比对，强制触发）"
         type: boolean
         default: false
 
@@ -49,23 +49,12 @@ jobs:
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add .last-substore-backend-version .last-substore-frontend-version
-          # 强制模式下版本号可能跟缓存文件完全一样，没有实际改动可提交，
-          # git commit 在这种情况下会报错退出，所以先判断有没有真的改动。
           if git diff --cached --quiet; then
             echo "版本号没有变化，跳过提交（强制模式下属于正常情况)"
           else
             git commit -m "chore: bump cached Sub-Store versions (backend ${{ steps.check.outputs.backend_latest }}, frontend ${{ steps.check.outputs.frontend_latest }})"
             git push
           fi
-
-      # 2026-07 修复：之前这里在触发 ipk/apk 编译前，要先手动跑一次
-      # deploy.yml 把 sub-store.bundle.js / dist.zip 预热到 Cloudflare，
-      # 是因为当时 Makefile 里编译期下载是"镜像优先、官方源兜底"——镜像不
-      # 提前刷新，编译时拿到的就是上一轮的旧内容。现在 Makefile 已经改成
-      # "官方源优先、镜像仅兜底"，编译期直接连 GitHub 官方源拿最新内容，
-      # 不再依赖 Cloudflare 镜像是否提前刷新，这一步预热+轮询也就不需要了。
-      # /assets/ 镜像仍然会在下面 deploy.yml 里刷新，只是不再需要抢在编译
-      # 之前完成。
 
       - name: Trigger IPK and APK builds
         if: steps.check.outputs.changed == 'true'
@@ -96,9 +85,6 @@ jobs:
             sleep 30
           done
 
-      # 编译完成后再跑一次 deploy.yml：这次是发布真正的产物——把刚编译好
-      # 的 .ipk/.apk 签名、生成索引、推到 Cloudflare。顺带再刷一次
-      # /assets/ 镜像也没有坏处（内容和预热时一致，纯粹是幂等操作）。
       - name: Trigger deploy to Cloudflare (publish build artifacts)
         if: steps.check.outputs.changed == 'true'
         env:
