@@ -6,7 +6,7 @@
   上传完之后把下面 src 里的路径改成对应文件名，宽度可以按需调整 width 数值。
   也可以像 Sub-Store 官方那样直接用 raw.githubusercontent.com 的链接。
 -->
-<img width="200" src="./screenshots/logo.png" alt="luci-app-substore">
+<img width="200" src="./screenshots/Sub-Store.png" alt="luci-app-substore">
 <br>
 <br>
 <h2 align="center">luci-app-substore</h2>
