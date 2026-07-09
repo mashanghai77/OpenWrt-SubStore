@@ -1,9 +1,19 @@
-# luci-app-substore
+<div align="center">
+<br>
+<!--
+  === 在这里放项目 Logo/截图 ===
+  把图片文件放进仓库根目录的 screenshots/ 文件夹（比如 screenshots/logo.png），
+  上传完之后把下面 src 里的路径改成对应文件名，宽度可以按需调整 width 数值。
+  也可以像 Sub-Store 官方那样直接用 raw.githubusercontent.com 的链接。
+-->
+<img width="200" src="./screenshots/logo.png" alt="luci-app-substore">
+<br>
+<br>
+<h2 align="center">luci-app-substore</h2>
+</div>
 
-在 OpenWrt / LibWrt 路由器上一键部署 [Sub-Store](https://github.com/sub-store-org/Sub-Store) 订阅管理后端，并提供完整的 LuCI 图形化管理界面——启动/停止、版本查看、一键更新、定时任务、数据备份恢复等全部在网页上完成，不用手动敲命令、不用自己下 bundle、不用自己写 init 脚本。
-
-<p align="center">
-  <img src="./screenshots/Sub-Store.png" alt="Sub-Store LuCI 页面" width="700">
+<p align="center" color="#6a737d">
+在 OpenWrt / LibWrt 路由器上一键部署 <a href="https://github.com/sub-store-org/Sub-Store">Sub-Store</a> 订阅管理后端，并提供完整的 LuCI 图形化管理界面——启动/停止、版本查看、一键更新、定时任务、数据备份恢复等全部在网页上完成，不用手动敲命令、不用自己下 bundle、不用自己写 init 脚本。
 </p>
 
 ---
@@ -14,10 +24,8 @@
 - [系统要求](#系统要求)
 - [安装方法](#安装方法)
 - [快速上手](#快速上手)
-- [LuCI 页面说明](#luci-页面说明)
 - [配置项详解](#配置项详解)
 - [从源码构建](#从源码构建)
-- [已知限制](#已知限制)
 - [License](#license)
 
 ---
@@ -38,7 +46,7 @@
 
 | 项目 | 要求 |
 |---|---|
-| OpenWrt 版本 | 21.02 及以上（依赖新版 LuCI JS 前端框架 `ui.js`/`view.extend`，**不支持纯 Lua 老版 LuCI**，具体见 [常见问题](#常见问题-faq)） |
+| OpenWrt 版本 | 21.02 及以上（依赖新版 LuCI JS 前端框架 `ui.js`/`view.extend`，**不支持纯 Lua 老版 LuCI**） |
 | 包管理器 | `opkg`（OpenWrt 24.10 及更早）或 `apk`（OpenWrt 25.12 及以后），二选一，安装脚本会自动识别 |
 | 依赖软件包 | `node`（运行 Sub-Store 后端）、`unzip`（解压前端静态文件），装包时 opkg/apk 会自动一并装上 |
 | 存储空间 | 建议预留 30MB 以上可用空间（node 运行时 + 后端 bundle + 前端静态资源） |
@@ -95,19 +103,6 @@ apk add luci-app-substore
 
 ---
 
-## LuCI 页面说明
-
-| 页面 | 对应文件 | 功能 |
-|---|---|---|
-| 服务状态 | `main.js` | 启动/停止/重启、后端与前端版本显示（多源回退检测最新版本）、一键更新、打开面板入口 |
-| 基础设置 | `main.js` | 数据目录、实例名称、后端 API 路径前缀 |
-| 端口与网络 | `network.js` | 监听端口、监听地址（`::` / `0.0.0.0` / `127.0.0.1`）、默认代理 |
-| 定时任务 | `cron.js` | 订阅同步、数据备份、数据恢复、订阅预处理，均为 cron 表达式并带格式校验 |
-| 数据恢复 | `recovery.js` | 启动时从远程 URL（如 Gist Raw）拉取数据、拉取后执行的 JS 表达式 |
-| 高级设置 | `advanced.js` | 自定义图标、`X-Powered-By`、CORS 允许来源、最大 Header 大小、Body 大小限制、推送服务 URL |
-
----
-
 ## 配置项详解
 
 配置文件位于 `/etc/config/substore`，对应 UCI section `config`：
@@ -136,7 +131,6 @@ apk add luci-app-substore
 
 ---
 
-
 ## 从源码构建
 
 需要 OpenWrt SDK 或完整源码树：
@@ -149,14 +143,6 @@ make package/luci-app-substore/compile V=s
 ```
 
 构建过程会联网下载 Sub-Store 官方 Release 的后端 bundle 和前端 dist，请确保编译环境能访问 GitHub（或者自行把 `Makefile` 里的 `SUBSTORE_MIRROR_*_URL` 改成你自己的可用镜像地址）。
-
----
-
-## 已知限制
-
-- 不支持老版本纯 Lua LuCI（无 JS 框架的版本），详见 FAQ
-- 「更新后端」「更新前端」按钮点击后会同步等待下载完成，网络差时页面会有几秒到十几秒的等待，属正常现象
-- `produce_cron` 暂不支持 cron 表达式内部的逗号列表写法
 
 ---
 
