@@ -29,8 +29,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # 带上 GITHUB_TOKEN 认证请求，未认证调用 api.github.com 限额只有 60次/小时，
-          # 而这一条流水线一次发布要连续调好几轮，很容易撞上限流，认证后限额提到 5000次/小时。
           BACKEND_LATEST=$(curl -s -H "Authorization: token $GH_TOKEN" https://api.github.com/repos/sub-store-org/Sub-Store/releases/latest | jq -r .tag_name)
           FRONTEND_LATEST=$(curl -s -H "Authorization: token $GH_TOKEN" https://api.github.com/repos/sub-store-org/Sub-Store-Front-End/releases/latest | jq -r .tag_name)
 
@@ -64,10 +62,6 @@ jobs:
           echo "本次统一版本号: $VERSION（跟着下一次 pages-deploy.yml 的运行序号走）"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      # ── 修复点 2：定位 run_id 不再靠"触发后 sleep 10 秒 + 抓列表里最新一条"来猜，
-      # 而是记下触发前的时间戳（留 30 秒缓冲防止时钟误差），触发后轮询，
-      # 只认「workflow_dispatch 触发 且 创建时间 >= 触发时间」里最早的一条，
-      # 避免抓到别人手动跑的旧 run 或者 API 还没同步到的脏数据。
       - name: Trigger IPK build
         if: steps.check.outputs.changed == 'true'
         id: trigger_ipk
@@ -144,10 +138,6 @@ jobs:
         run: |
           gh run watch "${{ steps.trigger_apk.outputs.run_id }}" --exit-status
 
-      # ── 修复点 1：更新缓存文件并提交这一步，挪到 IPK、APK 两个构建都
-      # 确认成功（上面两个 watch --exit-status 都没报错）之后再执行。
-      # 这样只要构建失败，这一步就不会跑，版本比对文件也就不会被错误地
-      # 标记成"已处理"，下一轮调度会正常重试，不会漏发布。
       - name: Update cached version files
         if: steps.check.outputs.changed == 'true'
         run: |
