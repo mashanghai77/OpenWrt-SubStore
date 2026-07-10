@@ -15,9 +15,6 @@ SUBSTORE_FRONTEND_URL:=https://github.com/sub-store-org/Sub-Store-Front-End/rele
 SUBSTORE_MIRROR_BACKEND_URL:=https://substore-openwrt.445568.xyz/assets/sub-store.bundle.js
 SUBSTORE_MIRROR_FRONTEND_URL:=https://substore-openwrt.445568.xyz/assets/dist.zip
 
-# 由 CI（release-pipeline.yml）在触发构建时传入，值是上游 tag_name。
-# 传了就直接用，不用了才在下面兜底自己去查 api.github.com，
-# 避免 IPK/APK 两条构建流水线各自重复查询导致更容易撞上 GitHub API 限流。
 SUBSTORE_BACKEND_TAG:=
 SUBSTORE_FRONTEND_TAG:=
 
@@ -108,13 +105,6 @@ define Package/luci-app-substore/install
 	fi
 endef
 
-# 声明 /etc/config/substore 是配置文件（conffile）。
-# 没有这个声明，opkg/apk 在升级 ipk/apk 包时会把它当成普通文件直接覆盖，
-# 用户在 LuCI 里配置好的端口、监听地址、cron 定时任务、推送服务等设置，
-# 会在每次点"升级"的时候被悄悄重置成包里的默认值。声明成 conffile 之后，
-# 升级时如果发现本地文件被用户改过，opkg/apk 会保留用户的版本
-# （opkg 顶多把新默认值另存为 .opkg-1 后缀，不会覆盖用户已改的文件；
-# apk 同理会保留本地修改）。
 define Package/luci-app-substore/conffiles
 /etc/config/substore
 endef
