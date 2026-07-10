@@ -48,6 +48,18 @@ jobs:
           echo "backend_latest=$BACKEND_LATEST" >> $GITHUB_OUTPUT
           echo "frontend_latest=$FRONTEND_LATEST" >> $GITHUB_OUTPUT
 
+      - name: Resolve shared version
+        if: steps.check.outputs.changed == 'true'
+        id: ver
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LAST_DEPLOY_RUN=$(gh run list --workflow=deploy.yml --limit 1 --json number --jq '.[0].number // 0')
+          NEXT=$((LAST_DEPLOY_RUN + 1))
+          VERSION="2.9.$NEXT"
+          echo "本次统一版本号: $VERSION（跟着下一次 deploy.yml 的运行序号走）"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Update cached version files
         if: steps.check.outputs.changed == 'true'
         run: |
@@ -59,17 +71,9 @@ jobs:
           if git diff --cached --quiet; then
             echo "版本号没有变化，跳过提交（强制模式下属于正常情况)"
           else
-            git commit -m "chore: bump cached Sub-Store versions (backend ${{ steps.check.outputs.backend_latest }}, frontend ${{ steps.check.outputs.frontend_latest }})"
+            git commit -m "chore: bump cached Sub-Store versions (backend ${{ steps.check.outputs.backend_latest }}, frontend ${{ steps.check.outputs.frontend_latest }}), release v${{ steps.ver.outputs.version }}"
             git push
           fi
-
-      - name: Resolve shared version
-        if: steps.check.outputs.changed == 'true'
-        id: ver
-        run: |
-          VERSION="2.9.${{ github.run_number }}"
-          echo "本次统一版本号: $VERSION（IPK / APK 会使用同一个版本号，不再各自计数）"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Trigger IPK and APK builds
         if: steps.check.outputs.changed == 'true'
