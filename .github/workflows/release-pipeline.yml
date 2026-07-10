@@ -60,6 +60,84 @@ jobs:
           echo "本次统一版本号: $VERSION（跟着下一次 pages-deploy.yml 的运行序号走）"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
+      # ── 修复点 2：定位 run_id 不再靠"触发后 sleep 10 秒 + 抓列表里最新一条"来猜，
+      # 而是记下触发前的时间戳（留 30 秒缓冲防止时钟误差），触发后轮询，
+      # 只认「workflow_dispatch 触发 且 创建时间 >= 触发时间」里最早的一条，
+      # 避免抓到别人手动跑的旧 run 或者 API 还没同步到的脏数据。
+      - name: Trigger IPK build
+        if: steps.check.outputs.changed == 'true'
+        id: trigger_ipk
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SINCE=$(date -u -d '-30 seconds' +%Y-%m-%dT%H:%M:%SZ)
+          gh workflow run substore-ipk.yml -f version="${{ steps.ver.outputs.version }}"
+
+          run_id=""
+          for i in $(seq 1 24); do
+            sleep 5
+            run_id=$(gh run list --workflow=substore-ipk.yml --json databaseId,createdAt,event \
+              --jq "[.[] | select(.event==\"workflow_dispatch\" and .createdAt >= \"$SINCE\")] | sort_by(.createdAt) | .[0].databaseId // empty")
+            if [ -n "$run_id" ]; then
+              echo "定位到本次触发的 IPK run: $run_id"
+              break
+            fi
+            echo "还没找到本次触发的 IPK run，重试中...（第 $i 次）"
+          done
+
+          if [ -z "$run_id" ]; then
+            echo "错误: 轮询超时，未能定位到本次触发的 IPK run" >&2
+            exit 1
+          fi
+
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for IPK build
+        if: steps.check.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh run watch "${{ steps.trigger_ipk.outputs.run_id }}" --exit-status
+
+      - name: Trigger APK build
+        if: steps.check.outputs.changed == 'true'
+        id: trigger_apk
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SINCE=$(date -u -d '-30 seconds' +%Y-%m-%dT%H:%M:%SZ)
+          gh workflow run substore-apk.yml -f version="${{ steps.ver.outputs.version }}"
+
+          run_id=""
+          for i in $(seq 1 24); do
+            sleep 5
+            run_id=$(gh run list --workflow=substore-apk.yml --json databaseId,createdAt,event \
+              --jq "[.[] | select(.event==\"workflow_dispatch\" and .createdAt >= \"$SINCE\")] | sort_by(.createdAt) | .[0].databaseId // empty")
+            if [ -n "$run_id" ]; then
+              echo "定位到本次触发的 APK run: $run_id"
+              break
+            fi
+            echo "还没找到本次触发的 APK run，重试中...（第 $i 次）"
+          done
+
+          if [ -z "$run_id" ]; then
+            echo "错误: 轮询超时，未能定位到本次触发的 APK run" >&2
+            exit 1
+          fi
+
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for APK build
+        if: steps.check.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh run watch "${{ steps.trigger_apk.outputs.run_id }}" --exit-status
+
+      # ── 修复点 1：更新缓存文件并提交这一步，挪到 IPK、APK 两个构建都
+      # 确认成功（上面两个 watch --exit-status 都没报错）之后再执行。
+      # 这样只要构建失败，这一步就不会跑，版本比对文件也就不会被错误地
+      # 标记成"已处理"，下一轮调度会正常重试，不会漏发布。
       - name: Update cached version files
         if: steps.check.outputs.changed == 'true'
         run: |
@@ -74,33 +152,6 @@ jobs:
             git commit -m "chore: bump cached Sub-Store versions (backend ${{ steps.check.outputs.backend_latest }}, frontend ${{ steps.check.outputs.frontend_latest }}), release v${{ steps.ver.outputs.version }}"
             git push
           fi
-
-      - name: Trigger IPK and APK builds
-        if: steps.check.outputs.changed == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh workflow run substore-ipk.yml -f version="${{ steps.ver.outputs.version }}"
-          gh workflow run substore-apk.yml -f version="${{ steps.ver.outputs.version }}"
-          sleep 10
-
-      - name: Wait for IPK build
-        if: steps.check.outputs.changed == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          run_id=$(gh run list --workflow=substore-ipk.yml --limit 1 --json databaseId --jq '.[0].databaseId')
-          echo "IPK run id: $run_id"
-          gh run watch "$run_id" --exit-status
-
-      - name: Wait for APK build
-        if: steps.check.outputs.changed == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          run_id=$(gh run list --workflow=substore-apk.yml --limit 1 --json databaseId --jq '.[0].databaseId')
-          echo "APK run id: $run_id"
-          gh run watch "$run_id" --exit-status
 
       - name: Trigger pages-deploy to Cloudflare (publish build artifacts)
         if: steps.check.outputs.changed == 'true'
