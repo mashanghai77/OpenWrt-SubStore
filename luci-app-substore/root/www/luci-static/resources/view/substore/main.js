@@ -124,6 +124,13 @@ function updateWithFallback(scriptPath, label, statusEl) {
 	return tryStep(0);
 }
 
+function buildPanelUrl(sectionId) {
+	var port = uci.get('substore', sectionId || 'config', 'frontend_port') || '3001';
+	var path = uci.get('substore', sectionId || 'config', 'frontend_backend_path') || '/sub-store-api';
+	var host = window.location.hostname;
+	return 'http://' + host + ':' + port + '?api=http://' + host + ':' + port + path;
+}
+
 function refreshRunningState(node) {
 	return getServiceStatus().then(function(running) {
 		var indicator = node.querySelector('#substore_status_indicator');
@@ -134,11 +141,7 @@ function refreshRunningState(node) {
 		var panel = node.querySelector('#substore_open_panel');
 		if (panel) {
 			if (running) {
-				var port = uci.get('substore', 'config', 'frontend_port') || '3001';
-				var path = uci.get('substore', 'config', 'frontend_backend_path') || '/sub-store-api';
-				var host = window.location.hostname;
-				var url  = 'http://' + host + ':' + port + '?api=http://' + host + ':' + port + path;
-				panel.innerHTML = '<a href="%s" target="_blank" class="btn cbi-button cbi-button-action">打开 Sub-Store ↗</a>'.format(url);
+				panel.innerHTML = '<a href="%s" target="_blank" class="btn cbi-button cbi-button-action">打开 Sub-Store ↗</a>'.format(buildPanelUrl());
 			} else {
 				panel.innerHTML = '<span style="color:#999;">— 请先启动服务 —</span>';
 			}
@@ -148,6 +151,12 @@ function refreshRunningState(node) {
 }
 
 function waitForPanelReady(maxAttempts, intervalMs) {
+	if (window.location.protocol === 'https:') {
+		return new Promise(function(resolve) {
+			setTimeout(resolve, 1500);
+		});
+	}
+
 	var port = uci.get('substore', 'config', 'frontend_port') || '3001';
 	var url = 'http://' + window.location.hostname + ':' + port + '/';
 
@@ -263,12 +272,8 @@ return view.extend({
 		o = s.option(form.DummyValue, '_open', _('网页面板'));
 		o.rawhtml = true;
 		o.cfgvalue = function(section_id) {
-			var port = uci.get('substore', section_id, 'frontend_port') || '3001';
-			var path = uci.get('substore', section_id, 'frontend_backend_path') || '/sub-store-api';
-			var host = window.location.hostname;
-			var url  = 'http://' + host + ':' + port + '?api=http://' + host + ':' + port + path;
 			var inner = isRunning
-				? '<a href="%s" target="_blank" class="btn cbi-button cbi-button-action">打开 Sub-Store ↗</a>'.format(url)
+				? '<a href="%s" target="_blank" class="btn cbi-button cbi-button-action">打开 Sub-Store ↗</a>'.format(buildPanelUrl(section_id))
 				: '<span style="color:#999;">— 请先启动服务 —</span>';
 			return '<div id="substore_open_panel">' + inner + '</div>';
 		};
