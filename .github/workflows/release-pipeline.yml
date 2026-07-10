@@ -54,10 +54,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          LAST_DEPLOY_RUN=$(gh run list --workflow=deploy.yml --limit 1 --json number --jq '.[0].number // 0')
+          LAST_DEPLOY_RUN=$(gh run list --workflow=pages-deploy.yml --limit 1 --json number --jq '.[0].number // 0')
           NEXT=$((LAST_DEPLOY_RUN + 1))
           VERSION="2.9.$NEXT"
-          echo "本次统一版本号: $VERSION（跟着下一次 deploy.yml 的运行序号走）"
+          echo "本次统一版本号: $VERSION（跟着下一次 pages-deploy.yml 的运行序号走）"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Update cached version files
@@ -102,9 +102,9 @@ jobs:
           echo "APK run id: $run_id"
           gh run watch "$run_id" --exit-status
 
-      - name: Trigger deploy to Cloudflare (publish build artifacts)
+      - name: Trigger pages-deploy to Cloudflare (publish build artifacts)
         if: steps.check.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh workflow run deploy.yml
+          gh workflow run pages-deploy.yml
