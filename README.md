@@ -46,7 +46,7 @@
 
 | 项目 | 要求 |
 |---|---|
-| OpenWrt 版本 | 21.02 及以上（依赖新版 LuCI JS 前端框架 `ui.js`/`view.extend`，**不支持纯 Lua 老版 LuCI**） |
+| OpenWrt 版本 （依赖新版 LuCI JS 前端框架 `ui.js`/`view.extend`，**不支持纯 Lua 老版 LuCI**） |
 | 包管理器 | `opkg`（OpenWrt 24.10 及更早）或 `apk`（OpenWrt 25.12 及以后），二选一，安装脚本会自动识别 |
 | 依赖软件包 | `node`（运行 Sub-Store 后端）、`unzip`（解压前端静态文件），装包时 opkg/apk 会自动一并装上 |
 | 存储空间 | 建议预留 30MB 以上可用空间（node 运行时 + 后端 bundle + 前端静态资源） |
@@ -73,7 +73,7 @@ wget -O /tmp/install.sh https://substore-openwrt.445568.xyz/install.sh && sh /tm
 ```sh
 wget -O /tmp/substore-ipk.pub https://substore-openwrt.445568.xyz/substore-ipk.pub
 opkg-key add /tmp/substore-ipk.pub
-echo "src/gz substore https://substore-openwrt.445568.xyz/openwrt-23.05/all" > /etc/opkg/substore.conf
+echo "src/gz substore https://substore-openwrt.445568.xyz/openwrt-24.10/all" > /etc/opkg/substore.conf
 opkg update
 opkg install luci-app-substore
 ```
