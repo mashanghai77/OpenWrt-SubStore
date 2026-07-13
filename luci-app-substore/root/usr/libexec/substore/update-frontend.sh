@@ -15,7 +15,6 @@ UNZIP=$(command -v unzip)
 
 ZIP_PATH=/tmp/dist.zip
 DIST_PATH=/www/sub-store/dist
-DIST_BAK_PATH=/www/sub-store/dist.bak
 DIST_NEW_PATH=/www/sub-store/dist.new
 PROXY_PREFIX="https://ghfast.top/"
 OFFICIAL_URL="https://github.com/sub-store-org/Sub-Store-Front-End/releases/latest/download/dist.zip"
@@ -85,8 +84,7 @@ fi
 
 REAL_ROOT=$(dirname "$INDEX_PATH")
 
-"$RM" -rf "$DIST_BAK_PATH"
-[ -d "$DIST_PATH" ] && "$MV" "$DIST_PATH" "$DIST_BAK_PATH"
+"$RM" -rf "$DIST_PATH"
 "$MV" "$REAL_ROOT" "$DIST_PATH"
 "$RM" -rf "$DIST_NEW_PATH" "$ZIP_PATH"
 
