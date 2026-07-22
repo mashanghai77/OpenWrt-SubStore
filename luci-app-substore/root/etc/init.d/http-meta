@@ -7,11 +7,10 @@ STOP=10
 NAME=http-meta
 PROG=/usr/bin/node
 BUNDLE=/usr/libexec/substore/http-meta.bundle.js
-CORE=/usr/libexec/substore/http-meta/meta/http-meta
-# 全路由器共享内核槽位，跟 Nikki、官方 mihomo-meta/mihomo-alpha opkg 包一致的路径约定。
+TPL_SRC=/usr/libexec/substore/http-meta-tpl.yaml
+# mihomo 内核由 +mihomo-meta 依赖保证安装时就存在，路径跟 Nikki、官方
+# mihomo-meta/mihomo-alpha opkg 包完全一致，不再需要运行时探测/下载/提升。
 SHARED_CORE=/usr/bin/mihomo
-# 我们自己下载/提升外部内核时真身落脚点，跟官方 mihomo-meta 包安装路径一致。
-MIHOMO_BIN=/usr/libexec/mihomo
 
 uci_get() {
 	local ret=$(uci -q get substore.http_meta.$1)
@@ -23,7 +22,7 @@ start_service() {
 	[ "$enabled" = "1" ] || return 0
 
 	if [ ! -f "$BUNDLE" ]; then
-		echo "http-meta: 未安装 bundle，请先到 LuCI 面板点「安装/更新 HTTP-META」"
+		echo "http-meta: bundle 文件缺失（$BUNDLE），请重新安装本包"
 		return 0
 	fi
 
@@ -31,19 +30,18 @@ start_service() {
 	local external_core=$(uci_get external_core_path "")
 	mkdir -p "$meta_dir/meta"
 
-	# meta 目录必须同时有内核可执行文件和 tpl.yaml，否则 http-meta 进程起不来。
-	# 优先复用全路由器共享内核 /usr/bin/mihomo（不管是 opkg 装的 mihomo-meta/mihomo-alpha、
-	# Nikki，还是我们自己之前下载/提升的）；其次才用用户手动指定的外部内核路径，
-	# 并把它也提升为共享内核，方便以后其它工具直接复用。
-	if [ -x "$SHARED_CORE" ]; then
+	# tpl.yaml 是构建期一起打包进包内的静态资源，首次启动时复制到运行目录，
+	# 之后用户可自行修改，不会被后续启动覆盖。
+	[ -f "$meta_dir/meta/tpl.yaml" ] || cp "$TPL_SRC" "$meta_dir/meta/tpl.yaml"
+
+	# 内核：默认直接用 mihomo-meta 依赖装好的共享内核 /usr/bin/mihomo；
+	# 如果用户在「外部内核路径」里手动指定了别的可执行文件，则优先使用它。
+	if [ -n "$external_core" ] && [ -x "$external_core" ]; then
+		ln -sf "$external_core" "$meta_dir/meta/http-meta"
+	elif [ -x "$SHARED_CORE" ]; then
 		ln -sf "$SHARED_CORE" "$meta_dir/meta/http-meta"
-	elif [ -n "$external_core" ] && [ -x "$external_core" ]; then
-		ln -sf "$external_core" "$MIHOMO_BIN"
-		ln -sf "$MIHOMO_BIN" "$SHARED_CORE"
-		ln -sf "$SHARED_CORE" "$meta_dir/meta/http-meta"
-	fi
-	if [ ! -x "$meta_dir/meta/http-meta" ] && [ ! -x "$CORE" ]; then
-		echo "http-meta: 未找到内核二进制，请先到 LuCI 面板点「安装/更新 HTTP-META」"
+	else
+		echo "http-meta: 未找到 mihomo 内核（$SHARED_CORE 不存在），mihomo-meta 依赖可能安装失败，请检查 opkg" >&2
 		return 0
 	fi
 
