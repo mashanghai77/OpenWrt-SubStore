@@ -12,6 +12,7 @@ fi
 
 install -d "$DEST/etc/init.d"
 install -m0755 "$SRC/root/etc/init.d/substore" "$DEST/etc/init.d/substore"
+install -m0755 "$SRC/root/etc/init.d/http-meta" "$DEST/etc/init.d/http-meta"
 
 install -d "$DEST/etc/config"
 install -m0644 "$SRC/root/etc/config/substore" "$DEST/etc/config/substore"
@@ -20,6 +21,7 @@ install -d "$DEST/usr/libexec/substore"
 install -m0755 "$SRC/root/usr/libexec/substore/postinstall.sh" "$DEST/usr/libexec/substore/postinstall.sh"
 install -m0755 "$SRC/root/usr/libexec/substore/update-backend.sh" "$DEST/usr/libexec/substore/update-backend.sh"
 install -m0755 "$SRC/root/usr/libexec/substore/update-frontend.sh" "$DEST/usr/libexec/substore/update-frontend.sh"
+install -m0755 "$SRC/root/usr/libexec/substore/update-http-meta.sh" "$DEST/usr/libexec/substore/update-http-meta.sh"
 
 install -d "$DEST/usr/share/luci/menu.d"
 install -m0644 "$SRC/root/usr/share/luci/menu.d/luci-app-substore.json" "$DEST/usr/share/luci/menu.d/luci-app-substore.json"
@@ -28,7 +30,7 @@ install -d "$DEST/usr/share/rpcd/acl.d"
 install -m0644 "$SRC/root/usr/share/rpcd/acl.d/luci-app-substore.json" "$DEST/usr/share/rpcd/acl.d/luci-app-substore.json"
 
 install -d "$DEST/www/luci-static/resources/view/substore"
-for f in main.js advanced.js network.js recovery.js cron.js; do
+for f in main.js advanced.js network.js recovery.js cron.js httpmeta.js; do
 	install -m0644 "$SRC/root/www/luci-static/resources/view/substore/$f" \
 		"$DEST/www/luci-static/resources/view/substore/$f"
 done
