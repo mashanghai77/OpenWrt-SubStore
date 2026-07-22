@@ -1,0 +1,72 @@
+#!/bin/sh /etc/rc.common
+
+USE_PROCD=1
+START=99
+STOP=10
+
+NAME=http-meta
+PROG=/usr/bin/node
+BUNDLE=/usr/libexec/substore/http-meta.bundle.js
+CORE=/usr/libexec/substore/http-meta/meta/http-meta
+
+uci_get() {
+	local ret=$(uci -q get substore.http_meta.$1)
+	echo "${ret:-$2}"
+}
+
+start_service() {
+	local enabled=$(uci_get enabled 0)
+	[ "$enabled" = "1" ] || return 0
+
+	if [ ! -f "$BUNDLE" ]; then
+		echo "http-meta: 未安装 bundle，请先到 LuCI 面板点「安装/更新 HTTP-META」"
+		return 0
+	fi
+
+	local meta_dir=$(uci_get meta_dir /etc/sub-store/http-meta)
+	local external_core=$(uci_get external_core_path "")
+	mkdir -p "$meta_dir/meta"
+
+	# meta 目录必须同时有内核可执行文件和 tpl.yaml，否则 http-meta 进程起不来
+	if [ -n "$external_core" ] && [ -x "$external_core" ]; then
+		ln -sf "$external_core" "$meta_dir/meta/http-meta"
+	fi
+	if [ ! -x "$meta_dir/meta/http-meta" ] && [ ! -x "$CORE" ]; then
+		echo "http-meta: 未找到内核二进制，请先到 LuCI 面板点「安装/更新 HTTP-META」"
+		return 0
+	fi
+
+	local host=$(uci_get host 127.0.0.1)
+	local port=$(uci_get port 9876)
+	local authorization=$(uci_get authorization "")
+	local max_port=$(uci_get max_available_port "")
+	local min_port=$(uci_get min_available_port "")
+	local disable_auto_clean=$(uci_get disable_auto_clean 0)
+	local temp_folder=$(uci_get temp_folder "")
+	local body_json_limit=$(uci_get body_json_limit 1mb)
+
+	procd_open_instance
+	procd_set_param command "$PROG" "$BUNDLE"
+	procd_set_param respawn 3600 5 0
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+
+	procd_set_param env HOST="$host" PORT="$port" META_FOLDER="$meta_dir/meta" BODY_JSON_LIMIT="$body_json_limit"
+
+	[ -n "$authorization" ] && procd_append_param env AUTHORIZATION="$authorization"
+	[ -n "$max_port" ] && procd_append_param env META_MAX_AVAILABLE_PORT="$max_port"
+	[ -n "$min_port" ] && procd_append_param env META_MIN_AVAILABLE_PORT="$min_port"
+	[ "$disable_auto_clean" = "1" ] && procd_append_param env META_DISABLE_AUTO_CLEAN=true
+	[ -n "$temp_folder" ] && procd_append_param env META_TEMP_FOLDER="$temp_folder"
+
+	procd_close_instance
+}
+
+reload_service() {
+	stop
+	start
+}
+
+service_triggers() {
+	procd_add_reload_trigger "substore"
+}
