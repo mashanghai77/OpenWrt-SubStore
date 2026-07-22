@@ -46,5 +46,13 @@
 			"type": "view",
 			"path": "substore/advanced"
 		}
+	},
+	"admin/services/substore/httpmeta": {
+		"title": "HTTP-META",
+		"order": 45,
+		"action": {
+			"type": "view",
+			"path": "substore/httpmeta"
+		}
 	}
 }
