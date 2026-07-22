@@ -66,12 +66,14 @@ function escapeHtml(s) {
 function formatVersionLine(label, version) {
 	var v = (version && version !== 'unknown') ? version : '未安装';
 	if (v.length > 60) v = v.slice(0, 60) + '…';
+	// label 加 white-space:nowrap + flex-shrink:0，避免遇到超长的 version 字符串时
+	// flex 布局把 label 挤到比自身内容还窄，导致中文 label 逐字换行变成竖排。
 	return '<div style="display:flex !important;justify-content:space-between;align-items:center;' +
 		'background:linear-gradient(135deg,#ffffff,#f5f7fb);' +
 		'border:1px solid #e3e8f0;border-radius:8px;padding:5px 10px;' +
 		'box-shadow:0 1px 2px rgba(0,0,0,0.04);width:100% !important;box-sizing:border-box;">' +
-		'<span style="font-size:11px;color:#8a94a6;font-weight:500;">' + label + '</span>' +
-		'<span style="font-size:13px;font-weight:600;color:#2d3748;word-break:break-all;text-align:right;">' + escapeHtml(v) + '</span>' +
+		'<span style="font-size:11px;color:#8a94a6;font-weight:500;white-space:nowrap;flex-shrink:0;">' + label + '</span>' +
+		'<span style="font-size:13px;font-weight:600;color:#2d3748;word-break:break-all;text-align:right;min-width:0;margin-left:8px;">' + escapeHtml(v) + '</span>' +
 		'</div>';
 }
 
@@ -384,10 +386,10 @@ return view.extend({
 		o = s.option(form.Value, 'meta_dir', _('内核数据目录'), _('存放 http-meta 内核可执行文件与 tpl.yaml，对应环境变量 META_FOLDER 的上级目录'));
 		o.default = '/etc/sub-store/http-meta';
 
-		o = s.option(form.Flag, 'reuse_core', _('自动复用已有内核'), _('若路由器已安装 OpenClash/nikki，安装时优先软链接复用其 mihomo 内核，不重复下载'));
+		o = s.option(form.Flag, 'reuse_core', _('自动复用已有内核'), _('优先复用系统共享内核 /usr/bin/mihomo（Nikki、官方 mihomo-meta/mihomo-alpha 安装的都算），其次探测 OpenClash，不重复下载；下载或复用的内核也会反过来提升为系统共享内核，供其它工具直接使用'));
 		o.default = '1';
 
-		o = s.option(form.Value, 'external_core_path', _('外部内核路径'), _('手动指定一个已存在的 mihomo/clash-meta 可执行文件路径，设置后优先于自动探测/下载'));
+		o = s.option(form.Value, 'external_core_path', _('外部内核路径'), _('手动指定一个已存在的 mihomo/clash-meta 可执行文件路径；仅在系统共享内核 /usr/bin/mihomo 不存在时生效，生效后也会被提升为系统共享内核'));
 		o.placeholder = '/usr/bin/mihomo';
 
 		return m.render().then(function(node) {
