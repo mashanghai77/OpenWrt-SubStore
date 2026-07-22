@@ -8,6 +8,10 @@ NAME=http-meta
 PROG=/usr/bin/node
 BUNDLE=/usr/libexec/substore/http-meta.bundle.js
 CORE=/usr/libexec/substore/http-meta/meta/http-meta
+# 全路由器共享内核槽位，跟 Nikki、官方 mihomo-meta/mihomo-alpha opkg 包一致的路径约定。
+SHARED_CORE=/usr/bin/mihomo
+# 我们自己下载/提升外部内核时真身落脚点，跟官方 mihomo-meta 包安装路径一致。
+MIHOMO_BIN=/usr/libexec/mihomo
 
 uci_get() {
 	local ret=$(uci -q get substore.http_meta.$1)
@@ -27,9 +31,16 @@ start_service() {
 	local external_core=$(uci_get external_core_path "")
 	mkdir -p "$meta_dir/meta"
 
-	# meta 目录必须同时有内核可执行文件和 tpl.yaml，否则 http-meta 进程起不来
-	if [ -n "$external_core" ] && [ -x "$external_core" ]; then
-		ln -sf "$external_core" "$meta_dir/meta/http-meta"
+	# meta 目录必须同时有内核可执行文件和 tpl.yaml，否则 http-meta 进程起不来。
+	# 优先复用全路由器共享内核 /usr/bin/mihomo（不管是 opkg 装的 mihomo-meta/mihomo-alpha、
+	# Nikki，还是我们自己之前下载/提升的）；其次才用用户手动指定的外部内核路径，
+	# 并把它也提升为共享内核，方便以后其它工具直接复用。
+	if [ -x "$SHARED_CORE" ]; then
+		ln -sf "$SHARED_CORE" "$meta_dir/meta/http-meta"
+	elif [ -n "$external_core" ] && [ -x "$external_core" ]; then
+		ln -sf "$external_core" "$MIHOMO_BIN"
+		ln -sf "$MIHOMO_BIN" "$SHARED_CORE"
+		ln -sf "$SHARED_CORE" "$meta_dir/meta/http-meta"
 	fi
 	if [ ! -x "$meta_dir/meta/http-meta" ] && [ ! -x "$CORE" ]; then
 		echo "http-meta: 未找到内核二进制，请先到 LuCI 面板点「安装/更新 HTTP-META」"
