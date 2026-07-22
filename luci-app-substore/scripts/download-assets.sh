@@ -7,6 +7,15 @@ SUBSTORE_MIRROR_BACKEND_URL="https://substore-openwrt.445568.xyz/assets/sub-stor
 SUBSTORE_FRONTEND_URL="https://github.com/sub-store-org/Sub-Store-Front-End/releases/latest/download/dist.zip"
 SUBSTORE_MIRROR_FRONTEND_URL="https://substore-openwrt.445568.xyz/assets/dist.zip"
 
+# http-meta 的 bundle.js / tpl.yaml 跟后端 bundle 一样是与架构无关的静态资源，
+# 直接在构建期下载打包进 arch:all 的 ipk 里；mihomo 内核走 opkg 依赖（+mihomo-meta），
+# 由 opkg 按路由器实际架构自动装好，不再需要运行时探测架构再下载。
+GH_PROXY_PREFIX="https://gh.445568.xyz/"
+SUBSTORE_HTTPMETA_BUNDLE_URL="https://github.com/xream/http-meta/releases/latest/download/http-meta.bundle.js"
+SUBSTORE_HTTPMETA_BUNDLE_MIRROR_URL="$GH_PROXY_PREFIX$SUBSTORE_HTTPMETA_BUNDLE_URL"
+SUBSTORE_HTTPMETA_TPL_URL="https://github.com/xream/http-meta/releases/latest/download/tpl.yaml"
+SUBSTORE_HTTPMETA_TPL_MIRROR_URL="$GH_PROXY_PREFIX$SUBSTORE_HTTPMETA_TPL_URL"
+
 WGET_OPTS="${WGET_OPTS:---timeout=15 --tries=2 --waitretry=3}"
 
 KIND="$1"
@@ -93,8 +102,38 @@ frontend)
 	fi
 	;;
 
+httpmeta)
+	OUT="$LIBEXEC_DIR/http-meta.bundle.js"
+	echo "下载 HTTP-META bundle（优先走官方源）..."
+	if wget $WGET_OPTS -q -O "$OUT" "$SUBSTORE_HTTPMETA_BUNDLE_URL" \
+	   && [ -s "$OUT" ] \
+	   && ! head -c 200 "$OUT" | grep -qi '<html\|<!DOCTYPE'; then
+		echo "官方源下载 HTTP-META bundle 成功"
+	elif wget $WGET_OPTS -q -O "$OUT" "$SUBSTORE_HTTPMETA_BUNDLE_MIRROR_URL" \
+	   && [ -s "$OUT" ] \
+	   && ! head -c 200 "$OUT" | grep -qi '<html\|<!DOCTYPE'; then
+		echo "官方源不通，已改用加速代理下载 HTTP-META bundle 成功"
+	else
+		echo "错误: HTTP-META bundle 下载失败（代理和官方源都拿不到有效文件）" >&2
+		rm -f "$OUT"
+		exit 1
+	fi
+
+	TPL_OUT="$LIBEXEC_DIR/http-meta-tpl.yaml"
+	echo "下载 HTTP-META tpl.yaml（优先走官方源）..."
+	if wget $WGET_OPTS -q -O "$TPL_OUT" "$SUBSTORE_HTTPMETA_TPL_URL" && [ -s "$TPL_OUT" ]; then
+		echo "官方源下载 tpl.yaml 成功"
+	elif wget $WGET_OPTS -q -O "$TPL_OUT" "$SUBSTORE_HTTPMETA_TPL_MIRROR_URL" && [ -s "$TPL_OUT" ]; then
+		echo "官方源不通，已改用加速代理下载 tpl.yaml 成功"
+	else
+		echo "错误: tpl.yaml 下载失败（代理和官方源都拿不到有效文件）" >&2
+		rm -f "$TPL_OUT"
+		exit 1
+	fi
+	;;
+
 *)
-	echo "错误: 未知的类型 $KIND，只支持 backend/frontend" >&2
+	echo "错误: 未知的类型 $KIND，只支持 backend/frontend/httpmeta" >&2
 	exit 1
 	;;
 esac

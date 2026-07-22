@@ -21,7 +21,6 @@ install -d "$DEST/usr/libexec/substore"
 install -m0755 "$SRC/root/usr/libexec/substore/postinstall.sh" "$DEST/usr/libexec/substore/postinstall.sh"
 install -m0755 "$SRC/root/usr/libexec/substore/update-backend.sh" "$DEST/usr/libexec/substore/update-backend.sh"
 install -m0755 "$SRC/root/usr/libexec/substore/update-frontend.sh" "$DEST/usr/libexec/substore/update-frontend.sh"
-install -m0755 "$SRC/root/usr/libexec/substore/update-http-meta.sh" "$DEST/usr/libexec/substore/update-http-meta.sh"
 
 install -d "$DEST/usr/share/luci/menu.d"
 install -m0644 "$SRC/root/usr/share/luci/menu.d/luci-app-substore.json" "$DEST/usr/share/luci/menu.d/luci-app-substore.json"
@@ -39,3 +38,5 @@ sh "$SRC/scripts/download-assets.sh" backend "$DEST/usr/libexec/substore"
 
 install -d "$DEST/www/sub-store"
 sh "$SRC/scripts/download-assets.sh" frontend "$DEST/usr/libexec/substore" "$DEST/www/sub-store"
+
+sh "$SRC/scripts/download-assets.sh" httpmeta "$DEST/usr/libexec/substore"
