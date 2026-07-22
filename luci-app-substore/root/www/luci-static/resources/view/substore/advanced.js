@@ -35,6 +35,26 @@ return view.extend({
 		o.default = '1mb';
 		o.placeholder = '1mb';
 
+		o = s.option(form.Value, 'backend_prefix', _('后端路径附加前缀'), _('设置后，后端 API 端口（即使未走前端合并）也会额外带上「后端路径前缀」设置的后缀，适合同主机防扫场景，一般不用填'));
+
+		// ── MMDB 落地检测数据库 ──────────────────────────────────
+		s = m.section(form.NamedSection, 'config', 'substore', _('MMDB 落地检测数据库'));
+		s.anonymous = true;
+		s.description = _('配合检测落地/检测入口脚本使用，数据来自本地数据库，可节省大量请求耗时；不使用这类脚本可以不填');
+
+		o = s.option(form.Value, 'mmdb_country_path', _('Country 数据库路径'), _('GeoLite2-Country.mmdb 在路由器上的存放路径'));
+		o.placeholder = '/etc/sub-store/GeoLite2-Country.mmdb';
+
+		o = s.option(form.Value, 'mmdb_country_url', _('Country 数据库下载地址'), _('用于自动下载/更新 GeoLite2-Country.mmdb'));
+
+		o = s.option(form.Value, 'mmdb_asn_path', _('ASN 数据库路径'), _('GeoLite2-ASN.mmdb 在路由器上的存放路径'));
+		o.placeholder = '/etc/sub-store/GeoLite2-ASN.mmdb';
+
+		o = s.option(form.Value, 'mmdb_asn_url', _('ASN 数据库下载地址'), _('用于自动下载/更新 GeoLite2-ASN.mmdb'));
+
+		o = s.option(form.Value, 'mmdb_cron', _('数据库定时更新'), _('cron 表达式，需要同时设置了 Country 或 ASN 的路径+下载地址才会生效'));
+		o.placeholder = '0 0 * * *';
+
 		// ── 推送通知 ────────────────────────────────────────────
 		s = m.section(form.NamedSection, 'config', 'substore', _('推送通知'));
 		s.anonymous = true;
