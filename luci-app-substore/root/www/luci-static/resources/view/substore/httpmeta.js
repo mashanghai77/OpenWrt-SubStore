@@ -4,7 +4,6 @@
 'require uci';
 'require rpc';
 'require ui';
-'require fs';
 
 var callServiceList = rpc.declare({
 	object: 'service',
@@ -17,13 +16,6 @@ var callInitAction = rpc.declare({
 	object: 'rc',
 	method: 'init',
 	params: ['name', 'action']
-});
-
-var callRunCmd = rpc.declare({
-	object: 'file',
-	method: 'exec',
-	params: ['command', 'params'],
-	expect: { '': {} }
 });
 
 function getServiceStatus() {
@@ -40,48 +32,16 @@ function isServiceEnabled() {
 	return uci.get('substore', 'http_meta', 'enabled') === '1';
 }
 
-function readVersionFile(path) {
-	return fs.read(path).then(function(v) {
-		return (v || '').trim();
-	}).catch(function() {
-		return null;
-	});
-}
-
-function loadVersionInfo() {
-	return Promise.all([
-		readVersionFile('/usr/libexec/substore/http-meta.version'),
-		readVersionFile('/usr/libexec/substore/http-meta-core.version')
-	]).then(function(res) {
-		return { bundleVersion: res[0], coreVersion: res[1] };
-	});
+// HTTP-META 依附于 Sub-Store 主程序：主程序没启用时整个操作区置灰不可用，
+// 主程序被停止时 HTTP-META 也跟着一起停（联动逻辑见 main.js 的 toggleServiceAndReload）。
+function isMainServiceEnabled() {
+	return uci.get('substore', 'config', 'enabled') === '1';
 }
 
 function escapeHtml(s) {
 	return String(s).replace(/[&<>"']/g, function(c) {
 		return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
 	});
-}
-
-function formatVersionLine(label, version) {
-	var v = (version && version !== 'unknown') ? version : '未安装';
-	if (v.length > 60) v = v.slice(0, 60) + '…';
-	// label 加 white-space:nowrap + flex-shrink:0，避免遇到超长的 version 字符串时
-	// flex 布局把 label 挤到比自身内容还窄，导致中文 label 逐字换行变成竖排。
-	return '<div style="display:flex !important;justify-content:space-between;align-items:center;' +
-		'background:linear-gradient(135deg,#ffffff,#f5f7fb);' +
-		'border:1px solid #e3e8f0;border-radius:8px;padding:5px 10px;' +
-		'box-shadow:0 1px 2px rgba(0,0,0,0.04);width:100% !important;box-sizing:border-box;">' +
-		'<span style="font-size:11px;color:#8a94a6;font-weight:500;white-space:nowrap;flex-shrink:0;">' + label + '</span>' +
-		'<span style="font-size:13px;font-weight:600;color:#2d3748;word-break:break-all;text-align:right;min-width:0;margin-left:8px;">' + escapeHtml(v) + '</span>' +
-		'</div>';
-}
-
-function renderVersionInfo(info) {
-	return '<div style="display:grid !important;grid-template-columns:repeat(2,1fr) !important;gap:8px !important;width:100% !important;">' +
-		formatVersionLine('http-meta 版本', info.bundleVersion) +
-		formatVersionLine('内核版本', info.coreVersion) +
-		'</div>';
 }
 
 function renderStatusBadge(isRunning) {
@@ -104,18 +64,20 @@ function actionButtonStyle(enabled) {
 	return base + (enabled ? '' : 'opacity:0.45;filter:grayscale(70%);cursor:not-allowed;');
 }
 
-function renderToggleButton(isRunning) {
+function renderToggleButton(isRunning, mainEnabled) {
 	var label = isRunning ? '停止服务' : '启动服务';
 	var cls = isRunning ? 'cbi-button-remove' : 'cbi-button-action';
 	return '<button id="btn_hm_toggle" class="btn cbi-button ' + cls + '" ' +
-		'style="' + actionButtonStyle(true) + '">' + label + '</button>';
+		(mainEnabled ? '' : 'disabled ') +
+		'style="' + actionButtonStyle(mainEnabled) + '">' + label + '</button>';
 }
 
-function renderActionsPanel(isRunning, isEnabled) {
-	var toggleHtml = renderToggleButton(isRunning);
-	var restartStyle = actionButtonStyle(isEnabled);
+function renderActionsPanel(isRunning, isEnabled, mainEnabled) {
+	var toggleHtml = renderToggleButton(isRunning, mainEnabled);
+	var restartStyle = actionButtonStyle(mainEnabled && isEnabled);
 	return '<div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #e3e8f0;">' + toggleHtml + '</div>' +
-		'<button class="btn cbi-button cbi-button-apply" id="btn_hm_restart" style="' + restartStyle + '">重启服务</button>';
+		'<button class="btn cbi-button cbi-button-apply" id="btn_hm_restart" ' + (mainEnabled ? '' : 'disabled ') +
+		'style="' + restartStyle + '">重启服务</button>';
 }
 
 function injectDesktopCss() {
@@ -124,51 +86,10 @@ function injectDesktopCss() {
 	style.id = 'httpmeta_desktop_css';
 	style.textContent =
 		'@media (min-width: 768px) {' +
-		'#httpmeta_status_wrap, #httpmeta_version_info, #httpmeta_actions_panel, #httpmeta_update_panel {' +
+		'#httpmeta_status_wrap, #httpmeta_actions_panel {' +
 		'max-width: 480px !important; margin-left: 0 !important; margin-right: auto !important;' +
 		'}}';
 	document.head.appendChild(style);
-}
-
-function runSourceScript(scriptPath, source) {
-	return callRunCmd(scriptPath, [source]).then(function(res) {
-		var stdout = (res && res.stdout) ? res.stdout.trim() : '';
-		var stderr = (res && res.stderr) ? res.stderr.trim() : '';
-		var code = res ? res.code : -1;
-
-		if (code === 0 && stdout === 'OK') return { ok: true };
-		if (code === 0 && stdout.indexOf('DOWNLOAD_FAILED:') === 0) {
-			return { ok: false, retry: true, message: stdout.slice('DOWNLOAD_FAILED:'.length).trim() };
-		}
-		return { ok: false, retry: false, message: stderr || stdout || ('脚本执行失败（退出码 ' + code + '）') };
-	});
-}
-
-var SOURCE_CHAIN = [
-	{ source: 'proxy', name: '加速代理' },
-	{ source: 'official', name: '官方源' }
-];
-
-function updateWithFallback(scriptPath, label, statusEl) {
-	function tryStep(i) {
-		var step = SOURCE_CHAIN[i];
-		statusEl.style.color = '#666';
-		statusEl.textContent = '正在尝试' + step.name + '下载' + label + '...';
-
-		return runSourceScript(scriptPath, step.source).then(function(r) {
-			if (r.ok) return r;
-			if (!r.retry) throw new Error(r.message);
-
-			var next = SOURCE_CHAIN[i + 1];
-			if (!next) throw new Error(step.name + '下载失败：' + r.message);
-
-			statusEl.style.color = '#e67e22';
-			statusEl.textContent = step.name + '下载失败（' + r.message + '），正在改用' + next.name + '...';
-
-			return tryStep(i + 1);
-		});
-	}
-	return tryStep(0);
 }
 
 function waitForApplySettle(ms) {
@@ -213,20 +134,23 @@ function toggleServiceAndReload(action) {
 	});
 }
 
-var ENABLE_HINT_TEXT = '服务当前未启用：请先安装内核，再点击"启动服务"';
+var ENABLE_HINT_TEXT = '服务当前未启用：请先点击"启动服务"';
+var MAIN_DISABLED_HINT_TEXT = '请先在「基础设置」启用 Sub-Store 主程序，才能使用 HTTP-META';
 
-function guardedClick(btn, action) {
+function guardedClick(btn, mainEnabled, action) {
 	if (!btn) return;
 	btn.addEventListener('click', function() {
+		if (!mainEnabled) return;
 		if (!isServiceEnabled()) return;
 		action();
 	});
 }
 
-function bindActionButtons(node) {
+function bindActionButtons(node, mainEnabled) {
 	var btnToggle = node.querySelector('#btn_hm_toggle');
 	if (btnToggle) {
 		btnToggle.addEventListener('click', function() {
+			if (!mainEnabled) return;
 			var action = btnToggle.textContent.indexOf('停止') !== -1 ? 'stop' : 'start';
 			btnToggle.disabled = true;
 			if (action === 'start') btnToggle.style.color = '#e67e22';
@@ -241,7 +165,7 @@ function bindActionButtons(node) {
 	}
 
 	var btnRestart = node.querySelector('#btn_hm_restart');
-	guardedClick(btnRestart, function() {
+	guardedClick(btnRestart, mainEnabled, function() {
 		btnRestart.disabled = true;
 		btnRestart.style.color = '#e67e22';
 		btnRestart.textContent = '重启中...';
@@ -291,19 +215,18 @@ return view.extend({
 	load: function() {
 		return Promise.all([
 			uci.load('substore'),
-			getServiceStatus(),
-			loadVersionInfo()
+			getServiceStatus()
 		]);
 	},
 
 	render: function(data) {
 		var isRunning = data[1];
-		var versionInfo = data[2];
 		var isEnabled = isServiceEnabled();
+		var mainEnabled = isMainServiceEnabled();
 		var m, s, o;
 
 		m = new form.Map('substore', _('Sub-Store'),
-			_('HTTP-META 为测活/延迟/落地检测等脚本提供本地 Meta(mihomo) 内核测试能力，属于可选组件，用不到相关脚本可以不装。'));
+			_('HTTP-META 为测活/延迟/落地检测等脚本提供本地 Meta(mihomo) 内核测试能力，属于可选组件，用不到相关脚本可以不装。所需的 bundle 与 mihomo 内核已随本包一起安装完毕，直接启动即可使用。依赖 Sub-Store 主程序，主程序未启用或被停止时本页操作不可用。'));
 
 		// ── 服务状态 ────────────────────────────────────────────
 		s = m.section(form.NamedSection, 'http_meta', 'http_meta', _('服务状态'));
@@ -315,33 +238,19 @@ return view.extend({
 			return '<div id="httpmeta_status_wrap">' + renderStatusBadge(isRunning) + '</div>';
 		};
 
-		o = s.option(form.DummyValue, '_version', '');
-		o.rawhtml = true;
-		o.cfgvalue = function() {
-			return '<div id="httpmeta_version_info">' + renderVersionInfo(versionInfo) + '</div>';
-		};
-
 		o = s.option(form.DummyValue, '_actions', _('操作'));
 		o.rawhtml = true;
 		o.cfgvalue = function() {
-			return '<div id="httpmeta_actions_panel">' + renderActionsPanel(isRunning, isEnabled) + '</div>';
-		};
-		o.write = function() {};
-
-		o = s.option(form.DummyValue, '_update', '');
-		o.rawhtml = true;
-		o.cfgvalue = function() {
-			var style = actionButtonStyle(true);
-			return '<div id="httpmeta_update_panel" style="margin-top:8px;">' +
-				'<button class="btn cbi-button cbi-button-action" id="btn_install_httpmeta" style="' + style + '">安装/更新 HTTP-META（bundle + 内核）</button>' +
-				'<span id="httpmeta_update_status" style="display:block;font-size:13px;color:#666;text-align:center;margin-top:6px;"></span>' +
-				'</div>';
+			return '<div id="httpmeta_actions_panel">' + renderActionsPanel(isRunning, isEnabled, mainEnabled) + '</div>';
 		};
 		o.write = function() {};
 
 		o = s.option(form.DummyValue, '_enable_hint', '');
 		o.rawhtml = true;
 		o.cfgvalue = function() {
+			if (!mainEnabled) {
+				return '<div id="httpmeta_enable_hint" style="color:#e74c3c;font-size:13px;">⚠ ' + escapeHtml(MAIN_DISABLED_HINT_TEXT) + '</div>';
+			}
 			if (isEnabled) return '';
 			return '<div id="httpmeta_enable_hint" style="color:#e74c3c;font-size:13px;">⚠ ' + escapeHtml(ENABLE_HINT_TEXT) + '</div>';
 		};
@@ -383,47 +292,19 @@ return view.extend({
 		o.default = '1mb';
 		o.placeholder = '1mb';
 
-		o = s.option(form.Value, 'meta_dir', _('内核数据目录'), _('存放 http-meta 内核可执行文件与 tpl.yaml，对应环境变量 META_FOLDER 的上级目录'));
+		o = s.option(form.Value, 'meta_dir', _('内核数据目录'), _('存放 http-meta 运行时的内核软链接与 tpl.yaml，对应环境变量 META_FOLDER 的上级目录'));
 		o.default = '/etc/sub-store/http-meta';
 
-		o = s.option(form.Flag, 'reuse_core', _('自动复用已有内核'), _('优先复用系统共享内核 /usr/bin/mihomo（Nikki、官方 mihomo-meta/mihomo-alpha 安装的都算），其次探测 OpenClash，不重复下载；下载或复用的内核也会反过来提升为系统共享内核，供其它工具直接使用'));
-		o.default = '1';
-
-		o = s.option(form.Value, 'external_core_path', _('外部内核路径'), _('手动指定一个已存在的 mihomo/clash-meta 可执行文件路径；仅在系统共享内核 /usr/bin/mihomo 不存在时生效，生效后也会被提升为系统共享内核'));
+		o = s.option(form.Value, 'external_core_path', _('外部内核路径'), _('留空默认使用本包依赖自动安装好的 /usr/bin/mihomo；如需使用其它版本的 mihomo/clash-meta，可在此手动指定可执行文件路径，设置后优先生效'));
 		o.placeholder = '/usr/bin/mihomo';
 
 		return m.render().then(function(node) {
 			injectDesktopCss();
 
 			forceStackedRow(node, 'httpmeta_status_wrap');
-			forceStackedRow(node, 'httpmeta_version_info');
 			forceStackedRow(node, 'httpmeta_actions_panel', 'left');
-			forceStackedRow(node, 'httpmeta_update_panel');
 
-			bindActionButtons(node);
-
-			var btnInstall = node.querySelector('#btn_install_httpmeta');
-			var updateStatus = node.querySelector('#httpmeta_update_status');
-			if (btnInstall) {
-				btnInstall.addEventListener('click', function() {
-					btnInstall.disabled = true;
-					updateWithFallback('/usr/libexec/substore/update-http-meta.sh', 'HTTP-META', updateStatus).then(function() {
-						updateStatus.style.color = '#2ecc71';
-						updateStatus.textContent = '安装/更新成功。';
-						return Promise.all([loadVersionInfo(), getServiceStatus()]);
-					}).then(function(res) {
-						var info = res[0];
-						if (!info) return;
-						var el = node.querySelector('#httpmeta_version_info');
-						if (el) el.innerHTML = renderVersionInfo(info);
-					}).catch(function(err) {
-						updateStatus.style.color = '#e74c3c';
-						updateStatus.textContent = '安装/更新失败：' + (err && err.message ? err.message : '未知错误');
-					}).finally(function() {
-						btnInstall.disabled = false;
-					});
-				});
-			}
+			bindActionButtons(node, mainEnabled);
 
 			return node;
 		});

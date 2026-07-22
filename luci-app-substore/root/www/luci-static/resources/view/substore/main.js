@@ -284,6 +284,13 @@ function toggleServiceAndReload(action) {
 
 	uci.set('substore', 'config', 'enabled', newEnabled);
 
+	// 主程序停止时，HTTP-META 一并停用：写 0 后 uci.apply() 会触发
+	// http-meta 的 procd_add_reload_trigger("substore")，它 reload 时
+	// 重新读到 enabled=0，自然就停了，不需要额外调用停止。
+	if (action === 'stop') {
+		uci.set('substore', 'http_meta', 'enabled', '0');
+	}
+
 	return uci.save().then(function() {
 		return uci.apply();
 	}).then(function() {
