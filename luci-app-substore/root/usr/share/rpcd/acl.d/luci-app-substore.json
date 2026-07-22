@@ -8,7 +8,9 @@
 			},
 			"file": {
 				"/usr/libexec/substore/backend.version": ["read"],
-				"/usr/libexec/substore/frontend.version": ["read"]
+				"/usr/libexec/substore/frontend.version": ["read"],
+				"/usr/libexec/substore/http-meta.version": ["read"],
+				"/usr/libexec/substore/http-meta-core.version": ["read"]
 			}
 		},
 		"write": {
@@ -18,7 +20,8 @@
 			},
 			"file": {
 				"/usr/libexec/substore/update-backend.sh": ["exec"],
-				"/usr/libexec/substore/update-frontend.sh": ["exec"]
+				"/usr/libexec/substore/update-frontend.sh": ["exec"],
+				"/usr/libexec/substore/update-http-meta.sh": ["exec"]
 			}
 		}
 	}
