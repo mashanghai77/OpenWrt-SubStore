@@ -37,6 +37,12 @@ start_service() {
 	local custom_name=$(uci_get backend_custom_name "OpenWrt")
 	local custom_icon=$(uci_get backend_custom_icon "")
 	local x_powered_by=$(uci_get x_powered_by "")
+	local backend_prefix=$(uci_get backend_prefix "")
+	local mmdb_country_path=$(uci_get mmdb_country_path "")
+	local mmdb_country_url=$(uci_get mmdb_country_url "")
+	local mmdb_asn_path=$(uci_get mmdb_asn_path "")
+	local mmdb_asn_url=$(uci_get mmdb_asn_url "")
+	local mmdb_cron=$(uci_get mmdb_cron "")
 
 	procd_open_instance
 	procd_set_param command "$PROG" "$BUNDLE"
@@ -60,6 +66,12 @@ start_service() {
 	[ -n "$custom_name" ] && procd_append_param env SUB_STORE_BACKEND_CUSTOM_NAME="$custom_name"
 	[ -n "$custom_icon" ] && procd_append_param env SUB_STORE_BACKEND_CUSTOM_ICON="$custom_icon"
 	[ -n "$x_powered_by" ] && procd_append_param env SUB_STORE_X_POWERED_BY="$x_powered_by"
+	[ -n "$backend_prefix" ] && procd_append_param env SUB_STORE_BACKEND_PREFIX="$backend_prefix"
+	[ -n "$mmdb_country_path" ] && procd_append_param env SUB_STORE_MMDB_COUNTRY_PATH="$mmdb_country_path"
+	[ -n "$mmdb_country_url" ] && procd_append_param env SUB_STORE_MMDB_COUNTRY_URL="$mmdb_country_url"
+	[ -n "$mmdb_asn_path" ] && procd_append_param env SUB_STORE_MMDB_ASN_PATH="$mmdb_asn_path"
+	[ -n "$mmdb_asn_url" ] && procd_append_param env SUB_STORE_MMDB_ASN_URL="$mmdb_asn_url"
+	[ -n "$mmdb_cron" ] && procd_append_param env SUB_STORE_MMDB_CRON="$mmdb_cron"
 
 	procd_close_instance
 }
